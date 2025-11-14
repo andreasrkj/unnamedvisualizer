@@ -1,7 +1,7 @@
 # Unnamed Visualizer
 *(Yes, I haven't figured out a name yet)*
 
-**Unnamed Visualizer** converts RAMSES simulations into synthetic observations using RADMC-3D and CASA.
+**Unnamed Visualizer** converts [RAMSES](https://ramses.cnrs.fr/) simulations into synthetic observations using [RADMC-3D](https://github.com/dullemond/radmc3d-2.0) and [CASA](https://casadocs.readthedocs.io/en/stable/index.html).
 
 ### Current features:
 - Single wavelength (pseudo-dust continuum) images
