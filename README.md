@@ -6,10 +6,9 @@
 ### Current features:
 - Single wavelength (pseudo-dust continuum) images
 - Molecular line images (moment maps, channel maps, peak intensity/velocity maps)
-- Temperature (RADMC-3D), column density and velocities using [RaDvisPython](https://github.com/CGHolm/RaDvisPython)
-- SEDs
-- Bolometric temperature maps
 
 ### Future features:
-- Improve SED functionality
-- Improve CASA functionality
+- (BEING REWORKED) Temperature (RADMC-3D), column density and velocities using [RaDvisPython](https://github.com/CGHolm/RaDvisPython)
+- (BEING REWORKED) SEDs
+- (BEING REWORKED) Bolometric temperature maps
+- Improve CASA interactability
