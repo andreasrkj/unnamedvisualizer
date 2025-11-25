@@ -58,14 +58,15 @@ class imageClass:
         
         # Create scale bar
         # We should normalize the distances to the edges
-        bar_length = int(25 + 25 * (self.sizeau // 250))
-        end_point = 4/5 * self.sizeau//2
+        plot_size = np.abs(ax.get_xlim()[1] - ax.get_xlim()[0])
+        bar_length = int(25 + 25 * (plot_size // 250))
+        end_point = 4/5 * plot_size//2
 
-        ax.hlines(-375/500 * self.sizeau//2, end_point - bar_length, end_point, color=color, linestyles="solid", linewidths=3)
-        ax.text(end_point - bar_length/2, -375/500 * self.sizeau//2 -self.sizeau//2*20/500, str(bar_length)+" AU", ha="center", va='top', color=color, fontsize=20, weight="heavy")
-        if plot_text is not None: ax.text(0, 49/50 * self.sizeau//2, plot_text, ha="center", va="top", color=color, fontsize=18)
+        ax.hlines(-375/500 * plot_size//2, end_point - bar_length, end_point, color=color, linestyles="solid", linewidths=3)
+        ax.text(end_point - bar_length/2, -375/500 * plot_size//2 -plot_size//2*20/500, str(bar_length)+" AU", ha="center", va='top', color=color, fontsize=20)
+        if plot_text is not None: ax.text(0, 49/50 * plot_size//2, plot_text, ha="center", va="top", color=color, fontsize=18)
 
-    def plot_singlewav(self, log=False, ifreq=None, mask=False, vmin=None, vmax=None, ax=None, save=False):
+    def plot_singlewav(self, log=False, ifreq=None, vmin=None, vmax=None, ax=None, xlim=None, ylim=None, save=False):
         if not ax: # Create a figure if not supplied
             fig, ax = plt.subplots(1,1, figsize=(8,10))
         else:
@@ -98,11 +99,15 @@ class imageClass:
                 elif (vmin > plot_img.min()) and (vmin < plot_img.max()):
                     extend="both"
 
-        if mask:
-            plot_img = np.ma.masked_less_equal(plot_img, 3*self.rms * 1e3) # Mask image
-
         im = ax.imshow(plot_img, cmap=cmap, vmin=vmin, vmax=vmax, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2))
-        plt.colorbar(im, ax=ax, label=cb_label, pad=0, orientation="horizontal", location="top", extend=extend)
+        cbar = plt.colorbar(im, ax=ax, pad=0, orientation="horizontal", location="top", extend=extend)
+        cbar.set_label(cb_label, size=20)
+        cbar.ax.tick_params(labelsize=14)
+
+        if xlim is not None:
+            ax.set_xlim(xlim[0], xlim[1])
+        if ylim is not None:
+            ax.set_ylim(ylim[0], ylim[1])
 
         self._stylize_plot(ax, plot_text)
 
@@ -148,24 +153,13 @@ class imageClass:
 
         return mmap
 
-    def plot_moment(self, moment=0, mask=True, vmin=None, vmax=None, ax=None, save=False):
+    def plot_moment(self, moment=0, vmin=None, vmax=None, ax=None, xlim=None, ylim=None, save=False):
         if ax is None: # Create a figure if not supplied
             fig, ax = plt.subplots(1,1, figsize=(8,10))
         else:
             if save: print("Note, you've supplied a matplotlib axis while setting 'save' = True, this may create a weird-looking plot in the .png")
 
         mmap = self.calc_moment(moment)
-
-        # Mask values
-        if mask:
-            if moment in [0,8]:
-                mmap = np.ma.masked_less_equal(mmap, 3*self.rms)
-            elif moment in [1,2]:
-                mmap0 = np.ma.masked_less_equal(self.calc_moment(moment=0), 3*self.rms)
-                mmap = np.ma.masked_where(mmap0 <= 3*self.rms, mmap)
-            elif moment == 9:
-                mmap8 = np.ma.masked_less_equal(self.calc_moment(moment=8), 3*self.rms)
-                mmap = np.ma.masked_where(mmap8 <= 3*self.rms, mmap)
 
         # Set plot labels and colorbar
         if moment == 0:
@@ -206,7 +200,14 @@ class imageClass:
                     vmin = mmap.min(); vmax = np.abs(mmap.min())
 
         im = ax.imshow(mmap, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2), cmap=cmap, vmin=vmin, vmax=vmax)
-        plt.colorbar(im, ax=ax, label=cb_label, pad=0, orientation="horizontal", location="top", extend=extend)
+        cbar = plt.colorbar(im, ax=ax, pad=0, orientation="horizontal", location="top", extend=extend)
+        cbar.set_label(cb_label, size=20)
+        cbar.ax.tick_params(labelsize=14)
+
+        if xlim is not None:
+            ax.set_xlim(xlim[0], xlim[1])
+        if ylim is not None:
+            ax.set_ylim(ylim[0], ylim[1])
 
         self._stylize_plot(ax, self.mol_name+" J="+str(self.transition[1])+"-"+str(self.transition[2])+" transition", color="black")
 
@@ -214,7 +215,7 @@ class imageClass:
             print("Outputting image plot as .png")
             plt.savefig(self.path+"/saved_plots/MomentMaps/moment-"+str(moment)+"-map-"+self.fname.replace("image-","")+".png", bbox_inches="tight")
 
-    def plot_channel_map(self, mask=True, save=False):
+    def plot_channel_map(self, mask=True, xlim=None, ylim=None, save=False):
         # Depending on the resolution we define the number of maps made
         if self.nfreq <= 9: n = 3
         elif self.nfreq <= 16: n = 4
@@ -235,8 +236,15 @@ class imageClass:
                 Tb = cnst.h.cgs.value * self.freq[i] / cnst.k_B.cgs.value * 1/np.log(1 + 2 * cnst.h.cgs.value * self.freq[i]**3 / np.copy(self.image[:,:,i]) / cnst.c.cgs.value**2)
 
                 plot = ax[i].imshow(Tb, cmap="Spectral_r", origin="lower", vmin=0, vmax=100, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2))
-                ax[i].text(-475/500 * self.sizeau//2, 490/500 * self.sizeau//2 ,str(np.round(v_kms[i],2)) + " km/s", va="top", ha="left", color="white", size=18)
-                
+
+                if xlim is not None:
+                    ax.set_xlim(xlim[0], xlim[1])
+                if ylim is not None:
+                    ax.set_ylim(ylim[0], ylim[1])
+
+                plot_size = np.abs(ax.get_xlim()[1] - ax.get_xlim()[0])
+                ax[i].text(-475/500 * plot_size//2, 490/500 * plot_size//2 ,str(np.round(v_kms[i],2)) + " km/s", va="top", ha="left", color="white", size=18)
+
                 self._stylize_plot(ax[i])
             else:
                 fig.delaxes(ax[i])
@@ -248,6 +256,7 @@ class imageClass:
         cbar_ax = fig.add_axes([left, top, right - left, 0.015])
         cbar = fig.colorbar(plot, cax=cbar_ax, orientation="horizontal", extend="max")
         cbar.set_label("Brightness Temperature [K]", size=20)
+        cbar.ax.tick_params(labelsize=14)
         cbar_ax.xaxis.set_label_position('top')
         cbar_ax.xaxis.set_ticks_position('top')
 

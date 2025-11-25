@@ -102,6 +102,6 @@ def line_image(isink, iout, npix, sizeau, setthreads, iline, widthkms, linenlam,
         img = casaImageClass(isink=isink, iout=iout, image_name=fname, dpc=dpc, antennalist=antennalist, printname=print_name, printtrans=printtrans)
         
     else:
-        img = imageClass(isink=isink, iout=iout, image_name=fname, dpc=dpc)
+        img = imageClass(isink=isink, iout=iout, image_name=fname, dpc=dpc, printname=print_name, printtrans=printtrans)
 
     return img

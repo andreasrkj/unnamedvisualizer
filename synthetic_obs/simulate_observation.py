@@ -1,7 +1,10 @@
 import os, sys
 import astropy.io.fits as fits
 from ..helper_functions import get_casa_project_name
-sys.path.insert(0,'/lustre/hpc/software/astro/casa/casa-6.6.1-17-pipeline-2024.1.0.8/lib/py/lib/python3.8/site-packages/')
+#sys.path.insert(0,'/lustre/hpc/software/astro/casa/casa-6.6.1-17-pipeline-2024.1.0.8/lib/py/lib/python3.8/site-packages/')
+
+# If we want to run mpicasa, we should import the module
+
 import casatasks
 
 def run_simalma(image_name, path, antennalist=['alma.cycle7.8.cfg', 'alma.cycle7.5.cfg'], totaltime=['15h', '3h'], pwv=0.5, threshold="4mJy", niter=5000, overwrite=False, verbose=True):

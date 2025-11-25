@@ -123,7 +123,9 @@ def radvis_temperature(isink, iout, resolution, width, dz, view=None, inclinatio
         temperature = ramses.osyris_ivs["data1"]["Td"] / coldens
 
         np.savetxt(path+"/saved_values/"+fname, temperature)
-        np.savetxt(path+"/saved_values/coldens-"+view_str+"-res"+str(resolution)+"-width"+str(width)+"-dz"+str(dz)+".dat", coldens)
+        # If it isn't already generated, let's save it
+        if not os.path.exists(path+"/saved_values/coldens-"+view_str+"-res"+str(resolution)+"-width"+str(width)+"-dz"+str(dz)+".dat"):
+            np.savetxt(path+"/saved_values/coldens-"+view_str+"-res"+str(resolution)+"-width"+str(width)+"-dz"+str(dz)+".dat", coldens)
     else:
         # Load in the file
         temperature = np.loadtxt(path+"/saved_values/"+fname)
@@ -237,7 +239,7 @@ def radvis_velocities(isink, iout, resolution, width, dz, view=None, inclination
         if verbose: print("Projecting velocity components along line-of-sight")
         for i in range(xyz_velocities.shape[0]):
             for j in range(xyz_velocities.shape[1]): # Converts to km/s while we're at it
-                proj_vels[i,j] = (np.dot(xyz_velocities[i,j,:], normal_vector) / np.dot(normal_vector, normal_vector) * ramses.v_cgs * 1e-5)
+                proj_vels[i,j] = (np.dot(xyz_velocities[i,j,:], -normal_vector) / np.dot(normal_vector, normal_vector) * ramses.v_cgs * 1e-5)
 
         np.savetxt(path+"/saved_values/"+fname, proj_vels)
     else:
