@@ -7,8 +7,8 @@
 - Single wavelength (pseudo-dust continuum) images
 - Molecular line images (moment maps, channel maps, peak intensity/velocity maps)
 - Create and plot SEDs along with the bolometric temperature
+- Temperature (RADMC-3D), column density and velocities using [RaDvisPython](https://github.com/CGHolm/RaDvisPython)
 
 ### Future features:
-- (BEING REWORKED) Temperature (RADMC-3D), column density and velocities using [RaDvisPython](https://github.com/CGHolm/RaDvisPython)
 - (BEING REWORKED) Bolometric temperature maps
 - Improve CASA interactability
