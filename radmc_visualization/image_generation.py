@@ -35,23 +35,16 @@ def create_image(isink, iout, npix=800, wav=None, sizeau=1000, setthreads=4, vie
     '''
     try:
         # Log the current working directory before we move around
-        print("Does it fail before org_path?")
         org_path = os.getcwd()
 
-        print("Does it fail before getting view vectors?")
         east_vector, north_vector, normal_vector = calc_view_vectors(isink, iout, view=view, inclination=inclination, rotangle=rotangle)
-        print("Created view vectors")
 
         incl, phi      = get_projang(normal_vector)
-        print("Made incl, phi")
         position_angle = get_posang(north_vector, normal_vector)
-        print("Made pos angle")
         
         # Check if we're in the necessary folder
         path = goto_folder(isink, iout)
-        print("Created path")
         check_in_folder(path)
-        print("Checked in_folder")
 
         # Check if the inputs for molecular transitions are given
         if np.count_nonzero([iline, widthkms, linenlam]) == 3: # If all inputs given, do molecular image
