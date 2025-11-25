@@ -4,27 +4,15 @@ from ..sink_config import radmc_datadir
 # Function to check folders
 def check_folders(path):
     '''Check if the folder for saved values exists'''
-    if not os.path.exists(path+"/saved_values"): # If we haven't previously made a directory to store values
-        os.makedirs(path+"/saved_values") # We'll create one to store values like the north vector
-        print("Succesfully created folder 'saved_values'")
-    if not os.path.exists(path+"/saved_plots"):
-        os.makedirs(path+"/saved_plots")
-        print("Succesfully created folder 'saved_plots'")
+    for folder in ["saved_values","saved_plots","saved_images","saved_fits","casa_projects"]:
+        if not os.path.exists(path+"/"+folder):
+            os.makedirs(path+"/"+folder)
+            print("Sucessfully created folder " + folder)
     # Create the subfolders for organizing plots
-    for folder in ["TauMap","TauContour","ColumnDensity","Velocities","MomentMaps","SingleWav","MolComparison",
-                   "ViewComparison","TauComparison","ChannelMaps"]:
+    for folder in ["TauMap","ColumnDensity","Velocities","MomentMaps","SingleWav","ChannelMaps","TemperatureMap"]:
         if not os.path.exists(path+"/saved_plots/"+folder):
             os.makedirs(path+"/saved_plots/"+folder)
             print("Succesfully created subfolder " + folder)
-    if not os.path.exists(path+"/saved_images"):
-        os.makedirs(path+"/saved_images")
-        print("Succesfully created folder 'saved_images'")
-    if not os.path.exists(path+"/saved_fits"):
-        os.makedirs(path+"/saved_fits")
-        print("Succesfully created folder 'saved_fits'")
-    if not os.path.exists(path+"/casa_projects"):
-        os.makedirs(path+"/casa_projects")
-        print("Succesfully created folder 'casa_projects'")
 
 # This function generates the casa project name (creates long files - must be shortened)
 def get_casa_project_name(image_name):
