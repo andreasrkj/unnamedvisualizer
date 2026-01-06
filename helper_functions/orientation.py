@@ -50,12 +50,21 @@ def calc_coord_basis(isink, iout):
             print(f"You have specified isink as a float, interpreted as sink ID {sink_id} with max level {level}")
             error_msg = f"The data directory for sink {sink_id} with max level {level} hasn't been configured. Please specify the data directory in 'sink_config.py'." # Only necessary if not configured!
         else:
-            sink_id = isink
+            sink_id = sink_dirs[str(isink)][1]
             error_msg = f"The data directory for sink {sink_id} hasn't been configured. Please specify the data directory in 'sink_config.py'." # Only necessary if not configured!
         try:
-            datadir = sink_dirs[str(isink)]
+            datadir = sink_dirs[str(isink)][0]
         except:
             raise ValueError(error_msg)
+
+        if isinstance(iout, str):
+            iout_list = []
+            for char in iout:
+                if char.isdigit():
+                    iout_list.append(char)
+                if len(iout_list) >= 4:
+                    break
+            iout = "".join(iout_list)
 
         ramses.load(snap = iout, io = 'RAMSES', path = datadir, sink_id=sink_id, verbose=1, dtype = 'float64')
         # Calculate the new vector basis from the angular momentum vector

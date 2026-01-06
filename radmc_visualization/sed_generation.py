@@ -8,6 +8,46 @@ from radmc3dPy_SSJ import image
 from ..helper_functions import goto_folder, check_folders, get_view
 from .image_generation import create_image
 
+def make_3d_datacube(isink, iout, npix, sizeau, setthreads, dpc, view=None, inclination=None, rotangle=None, sed_points=20, verbose=1):
+    # Generate the 3D datacube used for SED and Tbol maps
+    path = goto_folder(isink, iout)
+    check_folders(path)
+    view_str, inclination, rotangle = get_view(view, inclination, rotangle, verbose)
+
+    fname = "3d-datacube-"+view_str+"-npix"+str(npix)+"-"+str(sizeau)+"au-"+str(sed_points)+"pts"
+
+    # Create wavelength spectrum
+    light_speed = 299792458 * 1e6 # mum/s
+    freqs = np.logspace(np.log10(30), np.log10(30000), sed_points) * 1e9 # Hz
+    wavs = light_speed/freqs
+
+    # If the datacube doesn't exist we should load it in!
+    if not os.path.exists(path+"/saved_values/"+fname+".npy"):
+        for i in range(len(freqs)):
+            create_image(isink, iout, npix=npix, wav=wavs[i], sizeau=sizeau, setthreads=setthreads,
+                            inclination=inclination, rotangle=rotangle)
+            
+            img = image.readImage(fname=path+"/image.out")
+
+            # If a distance is given, we'd like to convert the units to Jy/px
+            # Conversion from erg/s/cm/cm/ster to Jy/pixel (from radmc3dPy)
+            if verbose: print("Distance to source given. Converting flux unit to Jy/px...")
+            conv = img.sizepix_x * img.sizepix_y / (dpc * cnst.pc.cgs.value)**2. * 1e23
+            img.image *= conv
+
+            # We want to save the image grid in an array
+            if i == 0:
+                img_stack = np.copy(img.image)
+            else:
+                img_stack = np.dstack([img_stack, img.image])
+            
+        np.save(path+"/saved_values/"+fname+".npy", img_stack)
+    else:
+        if verbose: print("The image cube has already been generated. Loading...")
+        img_stack = np.load(path+"/saved_values/"+fname+".npy")
+    
+    return freqs, img_stack.transpose((1,0,2))
+
 def flux2Tbol(flux,wav=None,freq=None):
     """
     Calculate bolometric Temperature (as defined in Myers et. al. (1993)).
@@ -76,13 +116,16 @@ def create_sed(isink, iout, npix, sizeau, setthreads, dpc, view=None, inclinatio
     if os.path.exists(path+"/saved_values/"+fname+".dat") and subtract_isrf:
         if verbose: print("The SED exists but is not ISRF subtracted. Performing subtraction and re-saving...")
         # Load non-subtracted ISRF
-        freqs, fluxes = np.loadtxt(path+"/saved_values/sed-"+view_str+"-"+str(sizeau)+"au.dat", unpack=True)
+        freqs, fluxes = np.loadtxt(path+"/saved_values/"+fname+".dat", unpack=True)
         light_speed = 299792458 * 1e6 # mum/s
         wavs = light_speed/freqs
+
         # Perform subtraction
         if verbose: print("Subtracting ISRF from calculated fluxes...")
+
         # Load in the ISRF
         isrf = np.loadtxt(path+"/external_source.inp")
+
         # Read off the length of the isrf
         datapts = int(isrf[1])
 
@@ -107,27 +150,14 @@ def create_sed(isink, iout, npix, sizeau, setthreads, dpc, view=None, inclinatio
             freqs, fluxes = np.loadtxt(path+"/saved_values/"+fname+".dat", unpack=True)
     else: # Create SED
         if verbose: print("The SED for this configuration doesn't exist. Creating...")
-        # Create wavelength spectrum
+        # Call the 3D datacube function to see if the datacube exists, otherwise make it
+        freqs, img_stack = make_3d_datacube(isink, iout, npix=npix, sizeau=sizeau, setthreads=setthreads, dpc=dpc, inclination=inclination, rotangle=rotangle, 
+                                            sed_points=sed_points, verbose=verbose)
         light_speed = 299792458 * 1e6 # mum/s
-        freqs = np.logspace(np.log10(30), np.log10(30000), sed_points) * 1e9 # Hz
         wavs = light_speed/freqs
-        # Create the flux array
-        fluxes = np.zeros_like(freqs)
 
-        for i in range(len(freqs)):
-            create_image(isink, iout, npix=npix, wav=wavs[i], sizeau=sizeau, setthreads=setthreads,
-                         inclination=inclination, rotangle=rotangle)
-            
-            img = image.readImage(fname=path+"/image.out")
-
-            # If a distance is given, we'd like to convert the units to Jy/px
-            # Conversion from erg/s/cm/cm/ster to Jy/pixel (from radmc3dPy)
-            if verbose: print("Distance to source given. Converting flux unit to Jy/px...")
-            conv = img.sizepix_x * img.sizepix_y / (dpc * cnst.pc.cgs.value)**2. * 1e23
-            img.image *= conv            
-
-            # Save the flux in the array
-            fluxes[i] = np.sum(img.image.flatten())
+        # Let's make a flux array by summing over the image planes in the (npix,npix,sed_points) array
+        fluxes = img_stack.sum(axis=0).sum(axis=0)
         
         if subtract_isrf: # Now we check whether we want to subtract the ISRF
             if verbose: print("Subtracting ISRF from calculated fluxes...")
@@ -145,9 +175,9 @@ def create_sed(isink, iout, npix, sizeau, setthreads, dpc, view=None, inclinatio
             fluxes -= isrf_flux_interp
 
             # Now we save the frequencies and fluxes to a file for easy access
-            np.savetxt(path+"/saved_values/sed-"+view_str+"-"+str(sizeau)+"au-isrf_subtracted.dat", np.transpose([freqs, fluxes]))
+            np.savetxt(path+"/saved_values/"+fname+"-isrf_subtracted.dat", np.transpose([freqs, fluxes]))
         else:
-            np.savetxt(path+"/saved_values/sed-"+view_str+"-"+str(sizeau)+"au.dat", np.transpose([freqs, fluxes]))
+            np.savetxt(path+"/saved_values/"+fname+".dat", np.transpose([freqs, fluxes]))
 
     # Now we can output the frequencies and the fluxes
     return freqs, fluxes
@@ -174,6 +204,7 @@ def plot_sed(isink, iout, npix, sizeau, setthreads, dpc, view=None, inclination=
         save (bool, default=False): Whether to output the generated plot as a .png file    
     '''
     path = goto_folder(isink, iout)
+    check_folders(path)
     view_str, inclination, rotangle = get_view(view, inclination, rotangle, verbose)
     
     if subtract_isrf:
@@ -185,12 +216,12 @@ def plot_sed(isink, iout, npix, sizeau, setthreads, dpc, view=None, inclination=
                              rotangle=rotangle, sed_points=sed_points, subtract_isrf=subtract_isrf, verbose=verbose)
     reduced_flux = freqs * unit.Hz * fluxes * unit.Jy
     c_mum = 299792458 * 1e6 # mum / s
-    if ax is not None: 
+    if ax is None: 
         fig, ax = plt.subplots(1, 1, figsize=(8,6))
     else:
         if save: print("Note, you've supplied a matplotlib axis while setting 'save' = True, this may create a weird-looking plot in the .png, if part of subplot")
 
-    ax.loglog(c_mum/freqs, reduced_flux.to(unit.erg/unit.s/unit.cm**2), label="Synthetic SED")
+    ax.loglog(c_mum/freqs, reduced_flux.to(unit.erg/unit.s/unit.cm**2), '.--', label="Synthetic SED")
 
     Tbol_SED = flux2Tbol(fluxes,freq=freqs) * unit.K
 
@@ -223,3 +254,75 @@ def plot_sed(isink, iout, npix, sizeau, setthreads, dpc, view=None, inclination=
     if save:
         if verbose: print("Outputting image plot as .png")
         plt.savefig(path+"/saved_plots/"+fname+".png", bbox_inches="tight")
+
+def create_Tbol_map(isink, iout, npix, sizeau, setthreads, dpc, view=None, inclination=None, rotangle=None, sed_points=20, verbose=1):
+    # Check if all the folders, that need to exist, do exist
+    path = goto_folder(isink, iout)
+    check_folders(path)
+    _, inclination, rotangle = get_view(view, inclination, rotangle, verbose)
+    
+    # Load in the 3D data cube for calculating bolometric temperature
+    freqs, img_stack = make_3d_datacube(isink, iout, npix=npix, sizeau=sizeau, setthreads=setthreads, dpc=dpc, inclination=inclination, rotangle=rotangle, 
+                                        sed_points=sed_points, verbose=verbose)
+
+    # Make the bolometric temperature map
+    Tbol_map = flux2Tbol(img_stack, freq=freqs)
+
+    return Tbol_map
+
+def plot_Tbol_map(isink, iout, npix, sizeau, setthreads, dpc, view=None, inclination=None, rotangle=None, sed_points=20, verbose=1, vmin=None, vmax=None, xlim=None, ylim=None, ax=None, save=False):
+    # Check if all the folders, that need to exist, do exist
+    path = goto_folder(isink, iout)
+    check_folders(path)
+    view_str, inclination, rotangle = get_view(view, inclination, rotangle, verbose)
+
+    save_name = "Tbol-"+view_str+"-npix"+str(npix)+"-"+str(sizeau)+"au-"+str(sed_points)+"pts"
+
+    if ax is None: # Create a figure if not supplied
+        fig, ax = plt.subplots(1,1, figsize=(8,10))
+    else:
+        if save: print("Note, you've supplied a matplotlib axis while setting 'save' = True, this may create a weird-looking plot in the .png")
+
+    # Generate the bolometric temperature
+    Tbol_map = create_Tbol_map(isink, iout, npix=npix, sizeau=sizeau, setthreads=setthreads, dpc=dpc, inclination=inclination, rotangle=rotangle, 
+                               sed_points=sed_points, verbose=verbose)
+
+    # Plot the bolometric temperature
+    if vmin is None: vmin = Tbol_map.min()
+    if vmax is None: vmax = Tbol_map.max()
+
+    if vmin > Tbol_map.min():
+        extend = "min"
+    elif vmax < Tbol_map.max():
+        extend="max"
+    elif (vmin > Tbol_map.min()) and (vmin < Tbol_map.max()):
+        extend="both"
+    else:
+        extend = "neither"
+
+    im = ax.imshow(Tbol_map, extent=(-sizeau/2,sizeau/2,-sizeau/2,sizeau/2), cmap="viridis", vmin=vmin, vmax=vmax, origin="lower")
+    cbar = plt.colorbar(im, ax=ax, pad=0, orientation="horizontal", location="top", extend=extend)
+    cbar.set_label("Bolometric Temperature [K]", size=20)
+    cbar.ax.tick_params(labelsize=14)
+
+    if xlim is not None:
+        ax.set_xlim(xlim[0], xlim[1])
+    if ylim is not None:
+        ax.set_ylim(ylim[0], ylim[1])
+
+    ax.xaxis.label.set_visible(False); ax.yaxis.label.set_visible(False)
+    ax.set_yticklabels([]); ax.set_yticks([])
+    ax.set_xticklabels([]); ax.set_xticks([])
+    
+    # Create scale bar
+    # We should normalize the distances to the edges
+    plot_size = np.abs(ax.get_xlim()[1] - ax.get_xlim()[0])
+    bar_length = int(25 + 25 * (plot_size // 250))
+    end_point = 4/5 * plot_size//2
+
+    ax.hlines(-375/500 * plot_size//2, end_point - bar_length, end_point, color="white", linestyles="solid", linewidths=3)
+    ax.text(end_point - bar_length/2, -375/500 * plot_size//2 -plot_size//2*20/500, str(bar_length)+" AU", ha="center", va='top', color="white", fontsize=20)
+
+    if save: 
+        print("Outputting image plot as .png")
+        plt.savefig(path+"/saved_plots/TemperatureMap/"+save_name+".png", bbox_inches="tight")

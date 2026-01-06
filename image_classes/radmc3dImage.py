@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 from matplotlib.offsetbox import AuxTransformBox, AnchoredOffsetbox
-from casatasks import imstat
 import astropy.constants as cnst
 import astropy.units as unit
 import astropy.io.fits as fits
@@ -28,10 +27,11 @@ class imageClass:
         
         data, header = fits.getdata(self.path+"/saved_fits/"+self.fname+".fits", header=True)
         
-        if header["NAXIS3"] > 1: # If multi-wavelength
-            self.image = data[0,:,::-1,:].transpose((1,2,0)) # Aligned with the axis that radmc3dPy loads in with
-        else:
-            self.image = data[0,0,:,:].transpose(1,0)
+        #if header["NAXIS3"] > 1: # If multi-wavelength
+        #    self.image = data[0,:,::-1,:].transpose((1,2,0)) # Aligned with the axis that radmc3dPy loads in with
+        #else:
+        #    self.image = data[0,0,:,:].transpose(1,0)
+        self.image = data[0,:,:,:].transpose((1,2,0))
         
         # Assign header keywords
         self.x = (np.arange(1,header["NAXIS1"]+1) - header["CRPIX1"]) * np.abs(header["CDELT1"]) * np.pi/180 * dpc * unit.pc.to(unit.cm)
@@ -50,7 +50,7 @@ class imageClass:
         else:
             self.nu0 = self.freq[self.nfreq//2]
 
-    def _stylize_plot(self, ax, plot_text=None, color="white"):
+    def _stylize_plot(self, ax, plot_text=None, color="white", text_size=18):
         # Remove axes
         ax.xaxis.label.set_visible(False); ax.yaxis.label.set_visible(False)
         ax.set_yticklabels([]); ax.set_yticks([])
@@ -63,8 +63,8 @@ class imageClass:
         end_point = 4/5 * plot_size//2
 
         ax.hlines(-375/500 * plot_size//2, end_point - bar_length, end_point, color=color, linestyles="solid", linewidths=3)
-        ax.text(end_point - bar_length/2, -375/500 * plot_size//2 -plot_size//2*20/500, str(bar_length)+" AU", ha="center", va='top', color=color, fontsize=20)
-        if plot_text is not None: ax.text(0, 49/50 * plot_size//2, plot_text, ha="center", va="top", color=color, fontsize=18)
+        ax.text(end_point - bar_length/2, -375/500 * plot_size//2 -plot_size//2*20/500, str(bar_length)+" AU", ha="center", va='top', color=color, fontsize=text_size)
+        if plot_text is not None: ax.text(0, 49/50 * plot_size//2, plot_text, ha="center", va="top", color=color, fontsize=text_size)
 
     def plot_singlewav(self, log=False, ifreq=None, vmin=None, vmax=None, ax=None, xlim=None, ylim=None, save=False):
         if not ax: # Create a figure if not supplied
@@ -77,29 +77,36 @@ class imageClass:
             raise ValueError("This is a multi-wavelength image. Specify 'ifreq' keyword if a wavelength is wanted.")
         elif self.nfreq > 1 and ifreq is not None:
             # Calculate distance from line center
-            v_kms = cnst.c.value * (self.nu0 - ifreq) / self.nu0 / 1e3
-            plot_text = self.mol_name+" J="+str(self.transition[1])+"-"+str(self.transition[2])+" transition @ "+str(np.round(v_kms,2))
+            v_kms = cnst.c.value * (self.nu0 - self.freq[ifreq]) / self.nu0 / 1e3
+            plot_text = self.mol_name+" J="+str(self.transition[0])+"-"+str(self.transition[1])+" transition @ "+str(np.round(v_kms,2))+" km/s"
             plot_img = self.image[:,:,ifreq]*1e3
             cmap = "Spectral_r"
             save_name = self.fname + "ifreq"+str(ifreq)
+            cb_label = "[mJy/px]"
         else:
-            plot_text = "$\\lambda = "+str(np.round(self.wav,2))+"$µm"
+            plot_text = "$\\lambda = "+str(np.round(self.wav[0],2))+"$µm"
             cmap = "magma"
             save_name = self.fname
-            if log: # If logscale we ignore vclip. Possible FIXME?
+            if log:
                 cb_label = "$\\log(I_\\nu / \\mathrm{max}(I_\\nu))$"
                 plot_img = np.log10(self.image / self.image.max())
             else:
                 cb_label = "[mJy/px]"
                 plot_img = self.image*1e3
-                if vmin > plot_img.min():
-                    extend = "min"
-                elif vmax < plot_img.max():
-                    extend="max"
-                elif (vmin > plot_img.min()) and (vmin < plot_img.max()):
-                    extend="both"
 
-        im = ax.imshow(plot_img, cmap=cmap, vmin=vmin, vmax=vmax, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2))
+        if vmin is None: vmin = plot_img.min()
+        if vmax is None: vmax = plot_img.max()
+
+        if vmin > plot_img.min():
+            extend = "min"
+        elif vmax < plot_img.max():
+            extend="max"
+        elif (vmin > plot_img.min()) and (vmin < plot_img.max()):
+            extend="both"
+        else:
+            extend="neither"
+
+        im = ax.imshow(plot_img, cmap=cmap, vmin=vmin, vmax=vmax, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2), origin="lower")
         cbar = plt.colorbar(im, ax=ax, pad=0, orientation="horizontal", location="top", extend=extend)
         cbar.set_label(cb_label, size=20)
         cbar.ax.tick_params(labelsize=14)
@@ -199,7 +206,7 @@ class imageClass:
                 elif np.abs(mmap.max()) > 0 and np.abs(mmap.max()) < np.abs(mmap.min()):
                     vmin = mmap.min(); vmax = np.abs(mmap.min())
 
-        im = ax.imshow(mmap, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2), cmap=cmap, vmin=vmin, vmax=vmax)
+        im = ax.imshow(mmap, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2), cmap=cmap, vmin=vmin, vmax=vmax, origin="lower")
         cbar = plt.colorbar(im, ax=ax, pad=0, orientation="horizontal", location="top", extend=extend)
         cbar.set_label(cb_label, size=20)
         cbar.ax.tick_params(labelsize=14)
@@ -209,13 +216,13 @@ class imageClass:
         if ylim is not None:
             ax.set_ylim(ylim[0], ylim[1])
 
-        self._stylize_plot(ax, self.mol_name+" J="+str(self.transition[1])+"-"+str(self.transition[2])+" transition", color="black")
+        self._stylize_plot(ax, self.mol_name+" J="+str(self.transition[0])+"-"+str(self.transition[1])+" transition", color="black")
 
         if save: 
             print("Outputting image plot as .png")
             plt.savefig(self.path+"/saved_plots/MomentMaps/moment-"+str(moment)+"-map-"+self.fname.replace("image-","")+".png", bbox_inches="tight")
 
-    def plot_channel_map(self, mask=True, xlim=None, ylim=None, save=False):
+    def plot_channel_map(self, xlim=None, ylim=None, vmin=None, vmax=None, save=False):
         # Depending on the resolution we define the number of maps made
         if self.nfreq <= 9: n = 3
         elif self.nfreq <= 16: n = 4
@@ -225,27 +232,38 @@ class imageClass:
         else:
             raise ValueError("linenlam exceeds the recommended number of maps.")
         
-        fig, ax = plt.subplots(n,n, figsize=(16,16))
+        fig, ax = plt.subplots(n,n, figsize=(20,20))
         ax = ax.flatten()
 
         v_kms = cnst.c.value * (self.nu0 - self.freq) / self.nu0 / 1e3
+        if vmin is None: vmin = self.image.min() * 1e3
+        if vmax is None: vmax = self.image.max() * 1e3
+
+        if vmin > self.image.min() * 1e3:
+            extend = "min"
+        elif vmax < self.image.max() * 1e3:
+            extend="max"
+        elif (vmin > self.image.min() * 1e3) and (vmin < self.image.max() * 1e3):
+            extend="both"
+        else:
+            extend = "neither"
 
         for i in range(len(ax)):
             if i < self.nfreq:
                 # Calculate the brightness temperature of the image
-                Tb = cnst.h.cgs.value * self.freq[i] / cnst.k_B.cgs.value * 1/np.log(1 + 2 * cnst.h.cgs.value * self.freq[i]**3 / np.copy(self.image[:,:,i]) / cnst.c.cgs.value**2)
+                #Tb = cnst.h.cgs.value * self.freq[i] / cnst.k_B.cgs.value * 1/np.log(1 + 2 * cnst.h.cgs.value * self.freq[i]**3 / (np.copy(self.image[:,:,i])*1e-23) / cnst.c.cgs.value**2)
 
-                plot = ax[i].imshow(Tb, cmap="Spectral_r", origin="lower", vmin=0, vmax=100, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2))
+                plot = ax[i].imshow(self.image[:,:,i]*1e3, cmap="Spectral_r", origin="lower", vmin=vmin, vmax=vmax, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2))
 
                 if xlim is not None:
-                    ax.set_xlim(xlim[0], xlim[1])
+                    ax[i].set_xlim(xlim[0], xlim[1])
                 if ylim is not None:
-                    ax.set_ylim(ylim[0], ylim[1])
+                    ax[i].set_ylim(ylim[0], ylim[1])
 
-                plot_size = np.abs(ax.get_xlim()[1] - ax.get_xlim()[0])
+                plot_size = np.abs(ax[i].get_xlim()[1] - ax[i].get_xlim()[0])
                 ax[i].text(-475/500 * plot_size//2, 490/500 * plot_size//2 ,str(np.round(v_kms[i],2)) + " km/s", va="top", ha="left", color="white", size=18)
 
-                self._stylize_plot(ax[i])
+                self._stylize_plot(ax[i], text_size=10)
             else:
                 fig.delaxes(ax[i])
         plt.subplots_adjust(wspace=0.01, hspace=0.01, top=0.88)
@@ -254,11 +272,11 @@ class imageClass:
         right = max(a.get_position().x1 for a in ax[:n])
         top = max(a.get_position().y1 for a in ax[:n]) + 0.01
         cbar_ax = fig.add_axes([left, top, right - left, 0.015])
-        cbar = fig.colorbar(plot, cax=cbar_ax, orientation="horizontal", extend="max")
-        cbar.set_label("Brightness Temperature [K]", size=20)
+        cbar = fig.colorbar(plot, cax=cbar_ax, orientation="horizontal", extend=extend)
+        cbar.set_label("Intensity [mJy/px]", size=20)
         cbar.ax.tick_params(labelsize=14)
         cbar_ax.xaxis.set_label_position('top')
         cbar_ax.xaxis.set_ticks_position('top')
 
-        fig.suptitle("Channel Map "+self.mol_name+" J="+str(self.transition[1])+"-"+str(self.transition[2])+" transition", size=30)
+        fig.suptitle("Channel Map "+self.mol_name+" J="+str(self.transition[0])+"-"+str(self.transition[1])+" transition", size=30)
         plt.savefig(self.path+"/saved_plots/ChannelMaps/channel-map-"+self.fname.replace("image-","")+".png", bbox_inches="tight", dpi=300)

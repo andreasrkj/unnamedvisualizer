@@ -44,8 +44,12 @@ def goto_folder(isink, iout, directory=radmc_datadir):
         sink = "{:03}".format(int(sink_id))+"_"+level
     else:
         sink = "{:03}".format(isink)
-    out  = '{:04}'.format(iout)
-    path = os.path.join(directory, 'sink'+str(sink)+'/nout'+out)
+    
+    if isinstance(iout, str): # If specific string just use that instead of the int
+        path = os.path.join(directory, 'sink'+str(sink)+'/'+iout)
+    else:
+        out  = '{:04}'.format(iout)
+        path = os.path.join(directory, 'sink'+str(sink)+'/nout'+out)
     return path
 
 # This function checks whether we're in the data folder, otherwise it moves us there. Good for separating plotting and data generation functions.

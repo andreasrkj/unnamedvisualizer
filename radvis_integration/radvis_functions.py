@@ -16,12 +16,12 @@ def get_sinkdir(isink):
             print(f"You have specified isink as a float, interpreted as sink ID {sink_id} with max level {level}")
             error_msg = f"The data directory for sink {sink_id} with max level {level} hasn't been configured. Please specify the data directory in 'sink_config.py'." # Only necessary if not configured!
     else:
-        sink_id = isink
+        sink_id = sink_dirs[str(isink)][1]
         # Default level for max resolution - hardcoded FIXME
         level = 20
         error_msg = f"The data directory for sink {sink_id} hasn't been configured. Please specify the data directory in 'sink_config.py'." # Only necessary if not configured!
     try:
-        datadir = sink_dirs[str(isink)]
+        datadir = sink_dirs[str(isink)][0]
     except:
         raise ValueError(error_msg)
     return sink_id, level, datadir

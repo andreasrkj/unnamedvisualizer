@@ -163,7 +163,7 @@ def molecular_lines_image(isink, iout, npix, sizeau, setthreads, iline, widthkms
     molecule_name = molecules[imolspec-1] # The imolspec is 1-indexed
 
     # Save fname for later use
-    fname = "image-"+molecule_name+"-"+view_str+"-npix"+str(npix)+"-"+str(sizeau)+"au-transition"+str(iline)+"-widthkms"+str(widthkms)+"-lines"+str(linenlam)
+    fname = "image-"+molecule_name.replace("+","plus")+"-"+view_str+"-npix"+str(npix)+"-"+str(sizeau)+"au-transition"+str(iline)+"-widthkms"+str(widthkms)+"-lines"+str(linenlam)
 
     # Next if it already existed, we'll check if we've already created the image before
     if not os.path.exists(path+"/saved_images/"+fname+".out"):

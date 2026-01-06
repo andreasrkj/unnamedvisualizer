@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 from matplotlib.offsetbox import AuxTransformBox, AnchoredOffsetbox
-from casatasks import imstat
 import astropy.constants as cnst
 import astropy.units as unit
 import astropy.io.fits as fits
@@ -26,26 +25,31 @@ class casaImageClass:
             self.mol_name = printname
             self.transition = printtrans
         
-        project_name = get_casa_project_name(self.fname)
+        #project_name = get_casa_project_name(self.fname)
 
         # Check whether to load in combined or single config observations
         if len(antennalist) > 1:
-            config_str = "combined"+"_".join(['alma.cycle7.8.cfg', 'alma.cycle7.5.cfg']).replace("alma.cycle","").replace(".cfg","")
-            stats = imstat(imagename=self.path+"/casa_projects/"+project_name+"/"+project_name+".concat.image.pbcor")
+            config_str = "combined"+"_".join(antennalist).replace("alma.cycle","").replace(".cfg","")
+            #stats = imstat(imagename=self.path+"/casa_projects/"+project_name+"/"+project_name+".concat.image.pbcor")
         else:
-            config_str = antennalist[0]
-            stats = imstat(imagename=self.path+"/casa_projects/"+project_name+"/"+project_name+"."+str(antennalist[0]).replace(".cfg","")+".noisy.image.pbcor")
+            config_str = antennalist[0].replace("cfg","noisy")
+            #stats = imstat(imagename=self.path+"/casa_projects/"+project_name+"/"+project_name+"."+str(antennalist[0]).replace(".cfg","")+".noisy.image.pbcor")
 
         # Load in the fits file
         data, header = fits.getdata(self.path+"/saved_fits/simalma_"+config_str+"_"+self.fname+".fits", header=True)
         # Load in the beam and RMS value if CASA image
-        self.beam = (header["BMAJ"]/header["CDELT1"], header["BMIN"]/header["CDELT2"], header["BPA"]) # beam size in px
-        self.rms = stats["rms"]
+        self.beam_px     = (header["BMAJ"]/header["CDELT1"], header["BMIN"]/header["CDELT2"], header["BPA"]) # beam size in px
+        self.beam_arcsec = (header["BMAJ"]*3600, header["BMIN"]*3600, header["BPA"])
+        #self.rms = stats["rms"]
 
-        if header["NAXIS3"] > 1: # If multi-wavelength
-            self.image = data[0,:,::-1,:].transpose((1,2,0)) # Aligned with the axis that radmc3dPy loads in with
-        else:
-            self.image = data[0,0,:,:].transpose(1,0)
+        #if header["NAXIS3"] > 1: # If multi-wavelength
+        #    self.image = data[0,:,::-1,:].transpose((1,2,0)) # Aligned with the axis that radmc3dPy loads in with
+        #else:
+        #    self.image = data[0,0,:,:].transpose(1,0)
+        self.image = data[0,:,:,:].transpose((1,2,0))
+
+        # Let's calculate the image background by taking the first two images, subtracting them and taking the mean std (should be true noise?)
+        self.rms = np.std(self.image[:,:,2]-self.image[:,:,1])
 
         # Assign header keywords
         self.x = (np.arange(1,header["NAXIS1"]+1) - header["CRPIX1"]) * np.abs(header["CDELT1"]) * np.pi/180 * dpc * unit.pc.to(unit.cm)
@@ -64,7 +68,7 @@ class casaImageClass:
         else:
             self.nu0 = self.freq[self.nfreq//2]
 
-    def _stylize_plot(self, ax, plot_text=None, color="white"):
+    def _stylize_plot(self, ax, plot_text=None, color="white", text_size=18):
         # Remove axes
         ax.xaxis.label.set_visible(False); ax.yaxis.label.set_visible(False)
         ax.set_yticklabels([]); ax.set_yticks([])
@@ -77,12 +81,12 @@ class casaImageClass:
         end_point = 4/5 * plot_size//2
 
         ax.hlines(-375/500 * plot_size//2, end_point - bar_length, end_point, color=color, linestyles="solid", linewidths=3)
-        ax.text(end_point - bar_length/2, -375/500 * plot_size//2 -plot_size//2*20/500, str(bar_length)+" AU", ha="center", va='top', color=color, fontsize=20, weight="heavy")
-        if plot_text is not None: ax.text(0, 49/50 * plot_size//2, plot_text, ha="center", va="top", color=color, fontsize=18)
+        ax.text(end_point - bar_length/2, -375/500 * plot_size//2 -plot_size//2*20/500, str(bar_length)+" AU", ha="center", va='top', color=color, fontsize=text_size)
+        if plot_text is not None: ax.text(0, 49/50 * plot_size//2, plot_text, ha="center", va="top", color=color, fontsize=text_size)
 
         # Add beam
         aux_tr_box = AuxTransformBox(ax.transData)
-        aux_tr_box.add_artist(Ellipse((0,0), self.beam[0] * self.sizepix_x/unit.AU.to(unit.cm), self.beam[1] * self.sizepix_y/unit.AU.to(unit.cm), self.beam[2], color="black"))
+        aux_tr_box.add_artist(Ellipse((0,0), self.beam_px[0] * self.sizepix_x/unit.AU.to(unit.cm), self.beam_px[1] * self.sizepix_y/unit.AU.to(unit.cm), self.beam_px[2], color="black"))
         box = AnchoredOffsetbox(child=aux_tr_box, loc="lower left", frameon=True)
         ax.add_artist(box)
 
@@ -97,32 +101,42 @@ class casaImageClass:
             raise ValueError("This is a multi-wavelength image. Specify 'ifreq' keyword if a wavelength is wanted.")
         elif self.nfreq > 1 and ifreq is not None:
             # Calculate distance from line center
-            v_kms = cnst.c.value * (self.nu0 - ifreq) / self.nu0 / 1e3
-            plot_text = self.mol_name+" J="+str(self.transition[1])+"-"+str(self.transition[2])+" transition @ "+str(np.round(v_kms,2))
+            v_kms = cnst.c.value * (self.nu0 - self.freq[ifreq]) / self.nu0 / 1e3
+            plot_text = self.mol_name+" J="+str(self.transition[0])+"-"+str(self.transition[1])+" transition @ "+str(np.round(v_kms,2))+" km/s"
             plot_img = self.image[:,:,ifreq]*1e3
             cmap = "Spectral_r"
             save_name = self.fname + "ifreq"+str(ifreq)
+            cb_label = "[mJy/beam]"
+
         else:
-            plot_text = "$\\lambda = "+str(np.round(self.wav,2))+"$µm"
+            plot_text = "$\\lambda = "+str(np.round(self.wav[0],2))+"$µm"
             cmap = "magma"
             save_name = self.fname
-            if log: # If logscale we ignore vclip. Possible FIXME?
+            if log:
+                # If log-scale and CASA, we'll probably have negative values...
                 cb_label = "$\\log(I_\\nu / \\mathrm{max}(I_\\nu))$"
                 plot_img = np.log10(self.image / self.image.max())
+                extend="neither"
             else:
                 cb_label = "[mJy/beam]"
                 plot_img = self.image*1e3
-                if vmin > plot_img.min():
-                    extend = "min"
-                elif vmax < plot_img.max():
-                    extend="max"
-                elif (vmin > plot_img.min()) and (vmin < plot_img.max()):
-                    extend="both"
 
         if mask:
             plot_img = np.ma.masked_less_equal(plot_img, 3*self.rms * 1e3) # Mask image
 
-        im = ax.imshow(plot_img, cmap=cmap, vmin=vmin, vmax=vmax, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2))
+        if vmin is None: vmin = plot_img.min()
+        if vmax is None: vmax = plot_img.max()
+
+        if vmin > plot_img.min():
+            extend = "min"
+        elif vmax < plot_img.max():
+            extend="max"
+        elif (vmin > plot_img.min()) and (vmin < plot_img.max()):
+            extend="both"
+        else:
+            extend="neither"
+
+        im = ax.imshow(plot_img, cmap=cmap, vmin=vmin, vmax=vmax, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2), origin="lower")
         cbar = plt.colorbar(im, ax=ax, pad=0, orientation="horizontal", location="top", extend=extend)
         cbar.set_label(cb_label, size=20)
         cbar.ax.tick_params(labelsize=14)
@@ -146,11 +160,11 @@ class casaImageClass:
         # Calculate velocity field
         v_kms = cnst.c.value * (self.nu0 - self.freq) / self.nu0 / 1e3
 
-        vmap = np.zeros([self.nx, self.ny, self.nfreq], dtype=np.float64)
-        for ifreq in range(self.nfreq):
-            vmap[:, :, ifreq] = v_kms[ifreq]
-
         if moment in [0,1,2]:
+            vmap = np.zeros([self.nx, self.ny, self.nfreq], dtype=np.float64)
+            for ifreq in range(self.nfreq):
+                vmap[:, :, ifreq] = v_kms[ifreq]
+
             # Now calculate the moment map
             y = self.image * (vmap**moment)
 
@@ -233,7 +247,7 @@ class casaImageClass:
                 elif np.abs(mmap.max()) > 0 and np.abs(mmap.max()) < np.abs(mmap.min()):
                     vmin = mmap.min(); vmax = np.abs(mmap.min())
 
-        im = ax.imshow(mmap, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2), cmap=cmap, vmin=vmin, vmax=vmax)
+        im = ax.imshow(mmap, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2), cmap=cmap, vmin=vmin, vmax=vmax, origin="lower")
         cbar = plt.colorbar(im, ax=ax, pad=0, orientation="horizontal", location="top", extend=extend)
         cbar.set_label(cb_label, size=20)
         cbar.ax.tick_params(labelsize=14)
@@ -243,13 +257,13 @@ class casaImageClass:
         if ylim is not None:
             ax.set_ylim(ylim[0], ylim[1])
 
-        self._stylize_plot(ax, self.mol_name+" J="+str(self.transition[1])+"-"+str(self.transition[2])+" transition", color="black")
+        self._stylize_plot(ax, self.mol_name+" J="+str(self.transition[0])+"-"+str(self.transition[1])+" transition", color="black")
 
         if save: 
             print("Outputting image plot as .png")
             plt.savefig(self.path+"/saved_plots/MomentMaps/moment-"+str(moment)+"-map-"+self.fname.replace("image-","")+".png", bbox_inches="tight")
 
-    def plot_channel_map(self, mask=True, save=False):
+    def plot_channel_map(self, mask=True, xlim=None, ylim=None, vmin=None, vmax=None, save=False):
         # Depending on the resolution we define the number of maps made
         if self.nfreq <= 9: n = 3
         elif self.nfreq <= 16: n = 4
@@ -263,35 +277,59 @@ class casaImageClass:
         ax = ax.flatten()
 
         v_kms = cnst.c.value * (self.nu0 - self.freq) / self.nu0 / 1e3
+        max_Tb = 0
+        min_Tb = 0
+
+        if mask:
+            plot_img = np.ma.masked_less_equal(self.image, 3*self.rms) * 1e3 # mJy/beam
+        else:
+            plot_img = self.image * 1e3 # mJy/beam
 
         for i in range(len(ax)):
             if i < self.nfreq:
                 # Calculate the brightness temperature of the image
-                Tb = cnst.h.cgs.value * self.freq[i] / cnst.k_B.cgs.value * 1/np.log(1 + 2 * cnst.h.cgs.value * self.freq[i]**3 / np.copy(self.image[:,:,i]) / cnst.c.cgs.value**2)
+                Tb = 1.222e3 * plot_img[:,:,i] / ((self.freq[i]*1e-9)**2 * self.beam_arcsec[0] * self.beam_arcsec[1]) # https://science.nrao.edu/facilities/vla/proposing/TBconv
+                if Tb.max() > max_Tb:
+                    max_Tb = Tb.max()
+                if Tb.min() < min_Tb:
+                    min_Tb = Tb.min()
 
-                plot = ax[i].imshow(Tb, cmap="Spectral_r", origin="lower", vmin=0, vmax=100, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2))
+                plot = ax[i].imshow(Tb, cmap="Spectral_r", origin="lower", vmin=vmin, vmax=vmax, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2))
 
                 if xlim is not None:
-                    ax.set_xlim(xlim[0], xlim[1])
+                    ax[i].set_xlim(xlim[0], xlim[1])
                 if ylim is not None:
-                    ax.set_ylim(ylim[0], ylim[1])
+                    ax[i].set_ylim(ylim[0], ylim[1])
 
-                plot_size = np.abs(ax.get_xlim()[1] - ax.get_xlim()[0])
-                ax[i].text(-475/500 * plot_size//2, 490/500 * plot_size//2 ,str(np.round(v_kms[i],2)) + " km/s", va="top", ha="left", color="white", size=18)
-                self._stylize_plot(ax[i])
+                plot_size = np.abs(ax[i].get_xlim()[1] - ax[i].get_xlim()[0])
+                ax[i].text(-475/500 * plot_size//2, 490/500 * plot_size//2 ,str(np.round(v_kms[i],2)) + " km/s", va="top", ha="left", color="black", size=18)
+                self._stylize_plot(ax[i], color="black", text_size=10)
             else:
                 fig.delaxes(ax[i])
+        if vmin is None: vmin = min_Tb
+        if vmax is None: vmax = max_Tb
+
+        if vmin > min_Tb and vmax < max_Tb:
+            cb_extend = "both"
+        elif vmin > min_Tb:
+            cb_extend = "min"
+        elif vmax < max_Tb:
+            cb_extend = "max"
+        else:
+            cb_extend = "neither"
+        
+
         plt.subplots_adjust(wspace=0.01, hspace=0.01, top=0.88)
         # compute combined horizontal span of the top row and place colorbar centered above it
         left = min(a.get_position().x0 for a in ax[:n])
         right = max(a.get_position().x1 for a in ax[:n])
         top = max(a.get_position().y1 for a in ax[:n]) + 0.01
         cbar_ax = fig.add_axes([left, top, right - left, 0.015])
-        cbar = fig.colorbar(plot, cax=cbar_ax, orientation="horizontal", extend="max")
+        cbar = fig.colorbar(plot, cax=cbar_ax, orientation="horizontal", extend=cb_extend)
         cbar.set_label("Brightness Temperature [K]", size=20)
         cbar.ax.tick_params(labelsize=14)
         cbar_ax.xaxis.set_label_position('top')
         cbar_ax.xaxis.set_ticks_position('top')
 
-        fig.suptitle("Channel Map "+self.mol_name+" J="+str(self.transition[1])+"-"+str(self.transition[2])+" transition", size=30)
+        fig.suptitle("Channel Map "+self.mol_name+" J="+str(self.transition[0])+"-"+str(self.transition[1])+" transition", size=30)
         plt.savefig(self.path+"/saved_plots/ChannelMaps/channel-map-"+self.fname.replace("image-","")+".png", bbox_inches="tight", dpi=300)

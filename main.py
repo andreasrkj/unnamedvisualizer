@@ -1,7 +1,7 @@
 import os, sys
 import numpy as np
 from .helper_functions import goto_folder, check_folders, get_view
-from .radmc_visualization import single_wavelength_image, molecular_lines_image, trace_tau
+from .radmc_visualization import single_wavelength_image, molecular_lines_image
 from .image_classes import casaImageClass, imageClass
 from .synthetic_obs import run_simalma
 sys.path.insert(0,'/lustre/hpc/software/astro/casa/casa-6.6.1-17-pipeline-2024.1.0.8/lib/py/lib/python3.8/site-packages/')
@@ -62,17 +62,23 @@ def line_image(isink, iout, npix, sizeau, setthreads, iline, widthkms, linenlam,
     # Let's read in which molecule is of interest here
     molecules = np.loadtxt(path+"/lines.inp", skiprows=2, dtype=str)[:,0]
     molecule_name = molecules[imolspec-1] # The imolspec is 1-indexed
-    print_name = np.loadtxt(path+"/molecule_"+molecule_name+".inp", dtype=str, max_rows=2)[1]
-
-    # Now we need to find the transition (which energy levels we move through)
-    # Read how many transitions there are
-    ntrans = np.loadtxt(path+"/molecule_"+molecule_name+".inp", skiprows=49, max_rows=1)
-    # Load in the transition values [1-indexed as well]
-    transitions = np.loadtxt(path+"/molecule_"+molecule_name+".inp", skiprows=51, max_rows=int(ntrans), usecols=(0,1,2), dtype=int)
-    printtrans = transitions[iline-1] - 1
+    # Grab the file and load in the relevant information
+    with open(path+"/molecule_"+molecule_name+".inp", 'r') as file:
+        lines = file.readlines()
+    for i in range(len(lines)):
+        lines[i] = lines[i].replace("\n","")
+    # The printable name is given by finding the index
+    molindex = lines.index("!MOLECULE") + 1
+    print_name = lines[molindex] # Print name
+    # The transition information is found in the same way
+    transindex = lines.index("!TRANS + UP + LOW + EINSTEINA(s^-1) + FREQ(GHz) + E_u(K)") + iline
+    transition_list = lines[transindex].split(" ")
+    while '' in transition_list:
+        transition_list.remove('')
+    printtrans = np.array(transition_list[1:3], dtype=int) - 1 # UPPER, LOWER
 
     # Save fname for later use
-    fname = "image-"+molecule_name+"-"+view_str+"-npix"+str(npix)+"-"+str(sizeau)+"au-transition"+str(iline)+"-widthkms"+str(widthkms)+"-lines"+str(linenlam)
+    fname = "image-"+molecule_name.replace("+","plus")+"-"+view_str+"-npix"+str(npix)+"-"+str(sizeau)+"au-transition"+str(iline)+"-widthkms"+str(widthkms)+"-lines"+str(linenlam)
 
     # Check if CASA is given the correct number of pixels for tclean
     if casa:
@@ -90,7 +96,7 @@ def line_image(isink, iout, npix, sizeau, setthreads, iline, widthkms, linenlam,
         if len(antennalist) > 1:
             config_str = "combined"+"_".join(antennalist).replace("alma.cycle","").replace(".cfg","")
         else:
-            config_str = antennalist[0]
+            config_str = antennalist[0].replace("cfg","noisy")
 
         # If it exists we load it. Otherwise run the simalma command
         if os.path.exists(path+"/saved_fits/simalma_"+config_str+"_"+fname+".fits"): 
