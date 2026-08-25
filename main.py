@@ -8,6 +8,14 @@ sys.path.insert(0,'/lustre/hpc/software/astro/casa/casa-6.6.1-17-pipeline-2024.1
 from casatools import synthesisutils
 su = synthesisutils()
 
+def _check_optimuum_pix(npix, verbose):
+    optimal_npix = su.getOptimumSize(npix)
+    if optimal_npix != npix: 
+        print("For the cleaning algorithm, CASA demands 'npix' is factorisable by 2,3,5 only. Setting 'npix' = "+str(optimal_npix))
+        npix = optimal_npix
+        if verbose: print("Set new 'npix' = "+str(npix))
+    return npix
+
 def continuum_image(isink, iout, npix, wav, sizeau, setthreads, dpc=140, view=None, inclination=None, rotangle=None, nostar=True, 
                     casa=False, antennalist=None, totaltime=None, threshold="4mJy", niter=5000, overwrite=False, verbose=1):
     # Check if all the folders, that need to exist, do exist
@@ -18,11 +26,7 @@ def continuum_image(isink, iout, npix, wav, sizeau, setthreads, dpc=140, view=No
 
     # Check if CASA is given the correct number of pixels for tclean
     if casa:
-        optimal_npix = su.getOptimumSize(npix)
-        if optimal_npix != npix: 
-            print("For the cleaning algorithm, CASA demands 'npix' is factorisable by 2,3,5 only. Setting 'npix' = "+str(optimal_npix))
-            npix = optimal_npix
-            if verbose: print("Set new 'npix' = "+str(npix))
+        npix = _check_optimuum_pix(npix, verbose)
 
     # Construct the file name
     fname = "image-"+view_str+"-npix"+str(npix)+"-singlewav-"+str(sizeau)+"au-"+str(int(wav))+"mu"
@@ -52,7 +56,7 @@ def continuum_image(isink, iout, npix, wav, sizeau, setthreads, dpc=140, view=No
     return img
 
 def line_image(isink, iout, npix, sizeau, setthreads, iline, widthkms, linenlam, imolspec=1, view=None, inclination=None, rotangle=None, dpc=None, nostar=True, 
-               casa=False, antennalist=None, totaltime=None, threshold="4mJy", niter=5000, overwrite=False, verbose=1):
+               casa=False, antennalist=None, totaltime=None, threshold="4mJy", niter=5000, pwv=0.5, overwrite=False, verbose=1):
     # Check if all the folders, that need to exist, do exist
     path = goto_folder(isink, iout)
     check_folders(path)
@@ -82,10 +86,7 @@ def line_image(isink, iout, npix, sizeau, setthreads, iline, widthkms, linenlam,
 
     # Check if CASA is given the correct number of pixels for tclean
     if casa:
-        optimal_npix = su.getOptimumSize(npix)
-        if optimal_npix != npix: print("For the cleaning algorithm, CASA demands 'npix' is factorisable by 2,3,5 only. Setting 'npix' = "+str(optimal_npix))
-        npix = optimal_npix
-        if verbose: print("Set new 'npix' = "+str(npix))
+        npix = _check_optimuum_pix(npix, verbose)
 
     # Call RADMC-3D since it handles whether to create or simply load the image
     molecular_lines_image(isink=isink, iout=iout, npix=npix, sizeau=sizeau, setthreads=setthreads, iline=iline, widthkms=widthkms, linenlam=linenlam, 
@@ -100,9 +101,9 @@ def line_image(isink, iout, npix, sizeau, setthreads, iline, widthkms, linenlam,
 
         # If it exists we load it. Otherwise run the simalma command
         if os.path.exists(path+"/saved_fits/simalma_"+config_str+"_"+fname+".fits"): 
-            print("The requested image has already been generated. Loading...")
+            if verbose: print("The requested image has already been generated. Loading...")
         else: 
-            run_simalma(fname, path, antennalist=antennalist, totaltime=totaltime, pwv=0.5, threshold=threshold, niter=niter, overwrite=overwrite, verbose=bool(verbose))
+            run_simalma(fname, path, antennalist=antennalist, totaltime=totaltime, pwv=pwv, threshold=threshold, niter=niter, overwrite=overwrite, verbose=bool(verbose))
         
         # Load it in using our class
         img = casaImageClass(isink=isink, iout=iout, image_name=fname, dpc=dpc, antennalist=antennalist, printname=print_name, printtrans=printtrans)

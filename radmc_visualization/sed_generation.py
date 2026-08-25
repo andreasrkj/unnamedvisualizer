@@ -130,7 +130,7 @@ def create_sed(isink, iout, npix, sizeau, setthreads, dpc, view=None, inclinatio
         datapts = int(isrf[1])
 
         isrf_wav = isrf[2:datapts+2]
-        intensity = isrf[datapts+2:] * 18700000000000.0**2 / (140 * cnst.pc.cgs.value)**2. * 1e23 # Convert to Jy/px
+        intensity = isrf[datapts+2:] * (sizeau/npix * (1 * unit.au).to_value(unit.cm))**2 / (dpc * cnst.pc.cgs.value)**2. * 1e23 # Convert to Jy/px
         isrf_flux = intensity * npix**2
         isrf_flux_interp = np.interp(wavs, isrf_wav, isrf_flux) # intensity taken over the image area, interpolated to SED datapoints (Jy)
 
@@ -167,7 +167,7 @@ def create_sed(isink, iout, npix, sizeau, setthreads, dpc, view=None, inclinatio
             datapts = int(isrf[1])
 
             isrf_wav = isrf[2:datapts+2]
-            intensity = isrf[datapts+2:] * 18700000000000.0**2 / (140 * cnst.pc.cgs.value)**2. * 1e23 # Convert to Jy/px
+            intensity = isrf[datapts+2:] * (sizeau/npix * (1 * unit.au).to_value(unit.cm))**2 / (dpc * cnst.pc.cgs.value)**2. * 1e23 # Convert to Jy/px
             isrf_flux = intensity * npix**2
             isrf_flux_interp = np.interp(wavs, isrf_wav, isrf_flux) # intensity taken over the image area, interpolated to SED datapoints (Jy)
 

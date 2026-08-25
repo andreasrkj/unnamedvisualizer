@@ -20,7 +20,7 @@ def calc_dusttemp(isink, iout, sizeCutout, setthreads, overwrite=False, output_a
         return None
 
     # Possible nphot levels
-    nphot_levels = np.array([1e6, 1e7, 2.5e7, 5e7, 1e8])
+    nphot_levels = np.array([1e6, 1e7, 2.5e7, 5e7, 1e8, 1.5e8, 2e8])
 
     # Hopefully run through SLURM
     if os.environ["SLURM_CPUS_PER_TASK"]:
@@ -73,7 +73,7 @@ def calc_dusttemp(isink, iout, sizeCutout, setthreads, overwrite=False, output_a
         ax3 = fig.add_subplot(2,2,4, sharex = ax2)
         ax = [ax1,ax2,ax3]
 
-        ax[0].hist(prev_temp, bins=int(np.sqrt(len(prev_temp))), label=f"nphot = {nphot_levels[lvl]}$\\times {10}^{6}$", alpha=0.5, histtype="step", density=True)
+        ax[0].hist(prev_temp, bins=int(np.sqrt(len(prev_temp))), label=f"nphot = {nphot_levels[lvl]*1e-6}$\\times {10}^{6}$", alpha=0.5, histtype="step", density=True)
 
     # While we have >20 cells with < 5K temp or (for large number of cells) more than 0.001% of cells are < 5K
     while (zero_cells > 20 or zero_cells / len(prev_temp) > 1e-5) or relative_error > 0.05:
@@ -118,7 +118,7 @@ def calc_dusttemp(isink, iout, sizeCutout, setthreads, overwrite=False, output_a
     if output_analysis:
         ax[1].plot(nphot_levels[:lvl+1]*1e-6, err_array, 'o--')
         ax[1].yaxis.set_major_formatter(mtick.PercentFormatter(1.0))
-        ax[1].fill_between([-2,102], -0.01, 0.05, color="lightgreen")
+        ax[1].fill_between([-2,202], -0.01, 0.05, color="lightgreen")
         ax[1].set_xlim(-2,nphot_levels[:lvl+1][-1]*1e-6+2); ax[1].set_ylim(-0.01, 0.2)
         ax[2].plot(nphot_levels[:lvl+1]*1e-6, zero_array, 'o--')
         # The inset only makes sense if we don't immediately converge at 10 million

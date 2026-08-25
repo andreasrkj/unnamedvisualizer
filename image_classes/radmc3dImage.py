@@ -50,20 +50,21 @@ class imageClass:
         else:
             self.nu0 = self.freq[self.nfreq//2]
 
-    def _stylize_plot(self, ax, plot_text=None, color="white", text_size=18):
+    def _stylize_plot(self, ax, plot_text=None, color="white", text_size=30):
         # Remove axes
         ax.xaxis.label.set_visible(False); ax.yaxis.label.set_visible(False)
         ax.set_yticklabels([]); ax.set_yticks([])
         ax.set_xticklabels([]); ax.set_xticks([])
-        
+    
         # Create scale bar
         # We should normalize the distances to the edges
         plot_size = np.abs(ax.get_xlim()[1] - ax.get_xlim()[0])
         bar_length = int(25 + 25 * (plot_size // 250))
-        end_point = 4/5 * plot_size//2
+        bar_length_normalized = bar_length / (np.abs(ax.get_xlim()[1] - ax.get_xlim()[0]))
 
-        ax.hlines(-375/500 * plot_size//2, end_point - bar_length, end_point, color=color, linestyles="solid", linewidths=3)
-        ax.text(end_point - bar_length/2, -375/500 * plot_size//2 -plot_size//2*20/500, str(bar_length)+" AU", ha="center", va='top', color=color, fontsize=text_size)
+        ax.hlines(0.07, 0.92-bar_length_normalized/2, 0.92+bar_length_normalized/2, color=color, linestyles="solid", linewidths=5, transform=ax.transAxes)
+        ax.text(0.92, 0.05, str(bar_length)+" AU", ha="center", va='top', transform=ax.transAxes, color=color, fontsize=text_size)
+
         if plot_text is not None: ax.text(0, 49/50 * plot_size//2, plot_text, ha="center", va="top", color=color, fontsize=text_size)
 
     def plot_singlewav(self, log=False, ifreq=None, vmin=None, vmax=None, ax=None, xlim=None, ylim=None, save=False):
@@ -127,26 +128,30 @@ class imageClass:
             raise ValueError("Cannot create moment map for a single wavelength image")
 
         # This part of the program is now appropriated from radmc3dPy !!
+        # Moment map definitions from spectral cube docs
         # Calculate velocity field
         v_kms = cnst.c.value * (self.nu0 - self.freq) / self.nu0 / 1e3
 
-        vmap = np.zeros([self.nx, self.ny, self.nfreq], dtype=np.float64)
-        for ifreq in range(self.nfreq):
-            vmap[:, :, ifreq] = v_kms[ifreq]
-
         if moment in [0,1,2]:
+            vmap = np.zeros([self.nx, self.ny, self.nfreq], dtype=np.float64)
+            for ifreq in range(self.nfreq):
+                vmap[:, :, ifreq] = v_kms[ifreq]
+
             # Now calculate the moment map
-            y = self.image * (vmap**moment)
+            if moment == 1:
+                y = self.image * (vmap**moment)
+            elif moment == 2:
+                mmap1 = self.calc_moment(moment=1)
+                y = self.image * (vmap - mmap1[...,None])**2
+            else:
+                y = self.image * (vmap**moment)
 
             dum = (vmap[:, :, 1:] - vmap[:, :, :-1]) * (y[:, :, 1:] + y[:, :, :-1]) * 0.5
 
             mmap = dum.sum(2)
 
             if moment > 0:
-                y = self.image
-                dum0 = (vmap[:, :, 1:] - vmap[:, :, :-1]) * (y[:, :, 1:] + y[:, :, :-1]) * 0.5
-                
-                mmap0 = dum0.sum(2)
+                mmap0 = self.calc_moment(moment=0)
                 mmap = mmap / mmap0
 
         elif moment == 8:
@@ -177,9 +182,9 @@ class imageClass:
             cmap = "RdBu_r"
             cb_label = 'Velocity [km/s]'
         elif moment == 2:
-            powex = str(moment)
             cmap = "Spectral_r"
-            cb_label = r'v$^' + powex + '$ [(km/s)$^' + powex + '$]'
+            cb_label = "Velocity Dispersion $\\sigma$ [km/s]"
+            mmap = np.sqrt(mmap)
         elif moment == 8:
             cmap = "Spectral_r"
             mmap *= 1e3 # Turn to mJy
@@ -208,15 +213,16 @@ class imageClass:
 
         im = ax.imshow(mmap, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2), cmap=cmap, vmin=vmin, vmax=vmax, origin="lower")
         cbar = plt.colorbar(im, ax=ax, pad=0, orientation="horizontal", location="top", extend=extend)
-        cbar.set_label(cb_label, size=20)
-        cbar.ax.tick_params(labelsize=14)
+        cbar.set_label(cb_label, size=30)
+        cbar.ax.tick_params(labelsize=25)
 
         if xlim is not None:
             ax.set_xlim(xlim[0], xlim[1])
         if ylim is not None:
             ax.set_ylim(ylim[0], ylim[1])
 
-        self._stylize_plot(ax, self.mol_name+" J="+str(self.transition[0])+"-"+str(self.transition[1])+" transition", color="black")
+        #self._stylize_plot(ax, self.mol_name+" J="+str(self.transition[0])+"-"+str(self.transition[1])+" transition", color="black")
+        self._stylize_plot(ax, f"{self.mol_name} @ {np.round(self.nu0 * 1e-9, 3)} GHz", color="black")
 
         if save: 
             print("Outputting image plot as .png")

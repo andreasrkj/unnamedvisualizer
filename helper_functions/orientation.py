@@ -96,6 +96,16 @@ def get_projang(v):
     return incl, phi
 
 def get_posang(north_vector, projection_vector):
+    '''
+    Calculates the position angle keyword for RADMC-3D based on the projection.
+    
+    Parameters:
+        north_vector: The vector that should point north in the image
+        projection_vector: Vector that should point towards the viewer
+    
+    Returns:
+        position angle (float)
+    '''
     if projection_vector[2] == 0:
         yimg = np.array([0, 0, 1])
     else:

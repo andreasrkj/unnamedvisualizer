@@ -1,11 +1,15 @@
-from ..helper_functions import goto_folder, get_casa_project_name
+# NOTE: Update SynthObserver release version
+# Now uses spectralcube to handle moment mapping for CASA images
+
+from ..helper_functions import goto_folder
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 from matplotlib.offsetbox import AuxTransformBox, AnchoredOffsetbox
 import astropy.constants as cnst
 import astropy.units as unit
-import astropy.io.fits as fits
+from spectral_cube import SpectralCube, Projection
+from regions import Regions
 
 plt.rcParams["axes.labelsize"] = "large"
 plt.rcParams["font.family"] = "serif"
@@ -24,42 +28,31 @@ class casaImageClass:
         if printname is not None:
             self.mol_name = printname
             self.transition = printtrans
-        
-        #project_name = get_casa_project_name(self.fname)
 
         # Check whether to load in combined or single config observations
         if len(antennalist) > 1:
             config_str = "combined"+"_".join(antennalist).replace("alma.cycle","").replace(".cfg","")
-            #stats = imstat(imagename=self.path+"/casa_projects/"+project_name+"/"+project_name+".concat.image.pbcor")
         else:
             config_str = antennalist[0].replace("cfg","noisy")
-            #stats = imstat(imagename=self.path+"/casa_projects/"+project_name+"/"+project_name+"."+str(antennalist[0]).replace(".cfg","")+".noisy.image.pbcor")
 
         # Load in the fits file
-        data, header = fits.getdata(self.path+"/saved_fits/simalma_"+config_str+"_"+self.fname+".fits", header=True)
-        # Load in the beam and RMS value if CASA image
-        self.beam_px     = (header["BMAJ"]/header["CDELT1"], header["BMIN"]/header["CDELT2"], header["BPA"]) # beam size in px
-        self.beam_arcsec = (header["BMAJ"]*3600, header["BMIN"]*3600, header["BPA"])
-        #self.rms = stats["rms"]
+        cube = SpectralCube.read(self.path+"/saved_fits/simalma_"+config_str+"_"+self.fname+".fits")
+        # Save the header as a future reference, if needed
+        self.header = cube.header
 
-        #if header["NAXIS3"] > 1: # If multi-wavelength
-        #    self.image = data[0,:,::-1,:].transpose((1,2,0)) # Aligned with the axis that radmc3dPy loads in with
-        #else:
-        #    self.image = data[0,0,:,:].transpose(1,0)
-        self.image = data[0,:,:,:].transpose((1,2,0))
-
-        # Let's calculate the image background by taking the first two images, subtracting them and taking the mean std (should be true noise?)
-        self.rms = np.std(self.image[:,:,2]-self.image[:,:,1])
+        # Load in the beam from the cube and calculate pixel and arcsec values
+        self.beam_px = (np.abs(cube.beam.major/cube.header["CDELT1"]), cube.beam.minor/cube.header["CDELT1"], cube.beam.pa)
+        self.beam_arcsec = (cube.beam.major.to_value(unit.arcsec), cube.beam.minor.to_value(unit.arcsec), cube.beam.pa)
 
         # Assign header keywords
-        self.x = (np.arange(1,header["NAXIS1"]+1) - header["CRPIX1"]) * np.abs(header["CDELT1"]) * np.pi/180 * dpc * unit.pc.to(unit.cm)
-        self.y = (np.arange(1,header["NAXIS2"]+1) - header["CRPIX2"]) * np.abs(header["CDELT2"]) * np.pi/180 * dpc * unit.pc.to(unit.cm)
+        self.x = (np.arange(1,self.header["NAXIS1"]+1) - self.header["CRPIX1"]+0.5) * np.abs(self.header["CDELT1"]) * np.pi/180 * dpc * unit.pc.to(unit.cm)
+        self.y = (np.arange(1,self.header["NAXIS2"]+1) - self.header["CRPIX2"]+0.5) * np.abs(self.header["CDELT2"]) * np.pi/180 * dpc * unit.pc.to(unit.cm)
         self.nx = len(self.x)
         self.ny = len(self.x)
-        self.sizepix_x = np.abs(header["CDELT1"] * np.pi/180 * dpc * unit.pc.to(unit.cm))
-        self.sizepix_y = np.abs(header["CDELT2"] * np.pi/180 * dpc * unit.pc.to(unit.cm))
-        self.sizeau = (self.sizepix_x * header["NAXIS1"] * unit.cm).to(unit.AU).value
-        self.freq = np.linspace(start=header["CRVAL3"], stop=(header["NAXIS3"]-1)*header["CDELT3"]+header["CRVAL3"], num=header["NAXIS3"])
+        self.sizepix_x = np.abs(self.header["CDELT1"] * np.pi/180 * dpc * unit.pc.to(unit.cm))
+        self.sizepix_y = np.abs(self.header["CDELT2"] * np.pi/180 * dpc * unit.pc.to(unit.cm))
+        self.sizeau = (self.sizepix_x * self.header["NAXIS1"] * unit.cm).to(unit.AU).value
+        self.freq = np.linspace(start=self.header["CRVAL3"], stop=(self.header["NAXIS3"]-1)*self.header["CDELT3"]+self.header["CRVAL3"], num=self.header["NAXIS3"])
         self.nfreq = len(self.freq)
         self.wav = (cnst.c / (self.freq * unit.Hz)).to(unit.micron).value
         self.nwav = len(self.wav)
@@ -67,6 +60,17 @@ class casaImageClass:
             self.nu0 = self.freq[self.nfreq//2-1]/2 + self.freq[self.nfreq//2]/2
         else:
             self.nu0 = self.freq[self.nfreq//2]
+        self.hpbw = (1.13 * (cnst.c / (self.nu0 * unit.Hz)) / (12 * unit.m) * unit.rad).to(unit.arcsec).value * self.dpc # in AU
+        self.hp0_2w = 1.517 * self.hpbw # also in AU
+
+        # Mask the image within 20% primary beam intensity
+        xx, yy = np.meshgrid((self.x * unit.cm).to(unit.AU).value, (self.y * unit.cm).to(unit.AU).value)
+        
+        # Mask out the cube
+        self.image = cube.with_mask(xx**2 + yy**2 < (self.hp0_2w/2)**2).with_spectral_unit(unit.km/unit.s, velocity_convention="radio", rest_value=self.nu0 * unit.Hz)
+
+        # Calculate RMS map assuming the first 20 channels are free of (extended) emission
+        self.rms = self.image[0:20,:,:].mad_std(axis=0)
 
     def _stylize_plot(self, ax, plot_text=None, color="white", text_size=18):
         # Remove axes
@@ -78,11 +82,12 @@ class casaImageClass:
         # We should normalize the distances to the edges
         plot_size = np.abs(ax.get_xlim()[1] - ax.get_xlim()[0])
         bar_length = int(25 + 25 * (plot_size // 250))
-        end_point = 4/5 * plot_size//2
+        bar_length_normalized = bar_length / (np.abs(ax.get_xlim()[1] - ax.get_xlim()[0]))
 
-        ax.hlines(-375/500 * plot_size//2, end_point - bar_length, end_point, color=color, linestyles="solid", linewidths=3)
-        ax.text(end_point - bar_length/2, -375/500 * plot_size//2 -plot_size//2*20/500, str(bar_length)+" AU", ha="center", va='top', color=color, fontsize=text_size)
-        if plot_text is not None: ax.text(0, 49/50 * plot_size//2, plot_text, ha="center", va="top", color=color, fontsize=text_size)
+        ax.hlines(0.07, 0.93-bar_length_normalized/2, 0.93+bar_length_normalized/2, color="black", linestyles="solid", linewidths=3, transform=ax.transAxes)
+        ax.text(0.93, 0.05, str(bar_length)+" AU", ha="center", va='top', color="black", transform=ax.transAxes, fontsize=text_size)
+
+        if plot_text is not None: ax.text(0.01, 0.99, plot_text, ha="left", va="top", color=color, fontsize=text_size, transform=ax.transAxes)
 
         # Add beam
         aux_tr_box = AuxTransformBox(ax.transData)
@@ -150,45 +155,50 @@ class casaImageClass:
 
         if save: 
             print("Outputting image plot as .png")
-            plt.savefig(self.path+"/saved_plots/SingleWav/"+save_name+".png", bbox_inches="tight")
+            plt.savefig(self.path+"/saved_plots/SingleWav/simalma_"+save_name+".png", bbox_inches="tight")
 
-    def calc_moment(self, moment=0):
-        if self.nfreq < 2:
-            raise ValueError("Cannot create moment map for a single wavelength image")
+    def calc_moment(self, moment=0, int_lims=(-2,2)):        
+        try: mmap = getattr(self, "moment"+str(moment)) # If we have already calculated it, no need to do it again
+        except:
+            if self.nfreq < 2:
+                raise ValueError("Cannot create moment map for a single wavelength image")
 
-        # This part of the program is now appropriated from radmc3dPy !!
-        # Calculate velocity field
-        v_kms = cnst.c.value * (self.nu0 - self.freq) / self.nu0 / 1e3
+            if moment in [0,1,2]:
+                try: self.snr_map
+                except: self.calc_snr_map()
 
-        if moment in [0,1,2]:
-            vmap = np.zeros([self.nx, self.ny, self.nfreq], dtype=np.float64)
-            for ifreq in range(self.nfreq):
-                vmap[:, :, ifreq] = v_kms[ifreq]
+                spectral_slab = self.image.with_mask(self.snr_map > 1).spectral_slab(int_lims[0] * unit.km/unit.s, int_lims[1] * unit.km/unit.s).to(unit.K)
+                mmap = spectral_slab.moment(order=moment)
 
-            # Now calculate the moment map
-            y = self.image * (vmap**moment)
+            elif moment == 8:
+                mmap = self.image.max(axis=0)
 
-            dum = (vmap[:, :, 1:] - vmap[:, :, :-1]) * (y[:, :, 1:] + y[:, :, :-1]) * 0.5
+            elif moment == 9:
+                mmap = self.image.argmax_world(axis=0)
+            
+            else:
+                raise ValueError("Cannot create moment maps other than 0, 1, 2, 8, 9")
 
-            mmap = dum.sum(2)
-
-            if moment > 0:
-                y = self.image
-                dum0 = (vmap[:, :, 1:] - vmap[:, :, :-1]) * (y[:, :, 1:] + y[:, :, :-1]) * 0.5
-                
-                mmap0 = dum0.sum(2)
-                mmap = mmap / mmap0
-
-        elif moment == 8:
-            mmap = self.image.max(axis=2)
-
-        elif moment == 9:
-            mmap = v_kms[np.argmax(self.image, axis=2)]
-        
-        else:
-            raise ValueError("Cannot create moment maps other than 0, 1, 2, 8, 9")
+            setattr(self, "moment"+str(moment), mmap)
 
         return mmap
+
+    def calc_snr_map(self):
+        '''Calculate Signal-to-Noise Ratio in each pixel for contours and masking '''
+        try: self.moment8
+        except: self.calc_moment(moment=8)
+
+        self.snr_map = self.moment8 / self.rms
+
+        return self.snr_map
+
+    def load_mask(self, mask_path):
+        '''Load a region file into the class'''
+        region = Regions.read(mask_path, format="crtf")
+        # Get mask from region
+        streamer_mask = region[0].to_pixel(self.image.wcs).to_mask(mode="center").to_image(self.image.shape).astype(int)
+
+        self.streamer_mask = streamer_mask 
 
     def plot_moment(self, moment=0, mask=True, vmin=None, vmax=None, ax=None, xlim=None, ylim=None, save=False):
         if ax is None: # Create a figure if not supplied
@@ -196,18 +206,13 @@ class casaImageClass:
         else:
             if save: print("Note, you've supplied a matplotlib axis while setting 'save' = True, this may create a weird-looking plot in the .png")
 
-        mmap = self.calc_moment(moment)
+        try: mmap = getattr(self, "moment"+str(moment))
+        except: mmap = self.calc_moment(moment=moment)
 
         # Mask values
-        if mask:
-            if moment in [0,8]:
-                mmap = np.ma.masked_less_equal(mmap, 3*self.rms)
-            elif moment in [1,2]:
-                mmap0 = np.ma.masked_less_equal(self.calc_moment(moment=0), 3*self.rms)
-                mmap = np.ma.masked_where(mmap0 <= 3*self.rms, mmap)
-            elif moment == 9:
-                mmap8 = np.ma.masked_less_equal(self.calc_moment(moment=8), 3*self.rms)
-                mmap = np.ma.masked_where(mmap8 <= 3*self.rms, mmap)
+        if mask and moment in [1,2,9]:
+            mmap8 = self.calc_moment(moment=8)
+            mmap = np.ma.masked_where(mmap8 <= 5*self.rms, mmap)
 
         # Set plot labels and colorbar
         if moment == 0:
@@ -215,29 +220,29 @@ class casaImageClass:
             mmap *= 1e3 # Turn to mJy :)
             cb_label = "[mJy/beam $\\times$ km/s]"
         elif moment == 1:
-            cmap = "RdBu_r"
+            cmap = "RdYlBu_r"
             cb_label = 'Velocity [km/s]'
         elif moment == 2:
-            powex = str(moment)
             cmap = "Spectral_r"
-            cb_label = r'v$^' + powex + '$ [(km/s)$^' + powex + '$]'
+            cb_label = "Velocity Dispersion $\\sigma$ [km/s]"
+            mmap = np.sqrt(mmap)
         elif moment == 8:
             cmap = "Spectral_r"
             mmap *= 1e3 # Turn to mJy
             cb_label = "Peak Intensity [mJy/beam]"
         elif moment == 9:
-            cmap = "RdBu_r"
+            cmap = "RdYlBu_r"
             cb_label = "Peak Velocity [km/s]"
         
         if vmin is None: vmin = mmap.min()
         if vmax is None: vmax = mmap.max()
 
-        if vmin > mmap.min():
+        if (vmin > mmap.min()) and (vmin < mmap.max()):
+            extend="both"
+        elif vmin > mmap.min():
             extend = "min"
         elif vmax < mmap.max():
             extend="max"
-        elif (vmin > mmap.min()) and (vmin < mmap.max()):
-            extend="both"
         else:
             extend = "neither"
             # ADDITION: Let's make the min and max symmetric if km/s
@@ -252,18 +257,33 @@ class casaImageClass:
         cbar.set_label(cb_label, size=20)
         cbar.ax.tick_params(labelsize=14)
 
+        # Add contour lines if velocity maps
+        if moment in [1,2,9]:
+            mmap8 = self.calc_moment(moment=8)
+            snr_map = mmap8 / self.rms
+            ax.contour(snr_map, levels=[10, 50, 100, 150], extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2), origin="lower", colors="black")
+
+
+        # Create the FWHM primary beam circle
+        hpbw_50_circle = plt.Circle((0,0), self.hpbw / 2, color="black", linestyle="--", fill=False)
+        ax.add_patch(hpbw_50_circle)
+
+        # Mark the star in the center
+        ax.scatter(0,0, marker="*", color="white", s=100, edgecolors="black")
+        
         if xlim is not None:
             ax.set_xlim(xlim[0], xlim[1])
         if ylim is not None:
             ax.set_ylim(ylim[0], ylim[1])
 
-        self._stylize_plot(ax, self.mol_name+" J="+str(self.transition[0])+"-"+str(self.transition[1])+" transition", color="black")
+        #self._stylize_plot(ax, self.mol_name+" J="+str(self.transition[0])+"-"+str(self.transition[1])+" transition", color="black")
+        self._stylize_plot(ax, f"{np.round(self.nu0 * 1e-9, 3)} GHz\n{self.mol_name}", color="black")
 
         if save: 
             print("Outputting image plot as .png")
-            plt.savefig(self.path+"/saved_plots/MomentMaps/moment-"+str(moment)+"-map-"+self.fname.replace("image-","")+".png", bbox_inches="tight")
+            plt.savefig(self.path+"/saved_plots/MomentMaps/simalma_moment-"+str(moment)+"-map-"+self.fname.replace("image-","")+".png", bbox_inches="tight")
 
-    def plot_channel_map(self, mask=True, xlim=None, ylim=None, vmin=None, vmax=None, save=False):
+    def plot_channel_map(self, mask=True, xlim=None, ylim=None, vmin=None, vmax=None, save=False): # TODO - Update to use SpectralCube
         # Depending on the resolution we define the number of maps made
         if self.nfreq <= 9: n = 3
         elif self.nfreq <= 16: n = 4
@@ -332,4 +352,4 @@ class casaImageClass:
         cbar_ax.xaxis.set_ticks_position('top')
 
         fig.suptitle("Channel Map "+self.mol_name+" J="+str(self.transition[0])+"-"+str(self.transition[1])+" transition", size=30)
-        plt.savefig(self.path+"/saved_plots/ChannelMaps/channel-map-"+self.fname.replace("image-","")+".png", bbox_inches="tight", dpi=300)
+        plt.savefig(self.path+"/saved_plots/ChannelMaps/simalma_channel-map-"+self.fname.replace("image-","")+".png", bbox_inches="tight", dpi=300)

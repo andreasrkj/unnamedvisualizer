@@ -51,7 +51,7 @@ def create_image(isink, iout, npix=800, wav=None, sizeau=1000, setthreads=4, vie
             print(f"Creating molecular line images for molecule {imolspec} transition {iline} with {linenlam} different wavelengths at a width of {widthkms} km/s")
             image.makeImage(npix=npix, incl=incl, phi=phi, sizeau=sizeau, setthreads=setthreads, posang=position_angle, 
                             imolspec=imolspec, iline=iline, widthkms=widthkms, linenlam=linenlam, nostar=nostar, tracetau=tracetau,
-                            doppcatch=True, exe = '/lustre/astro/troels/radmc3d/bin/radmc3d')
+                            doppcatch=True, exe = '/lustre/astro/troels/radmc3d/bin/radmc3d_ifx')
         
         elif np.count_nonzero([iline, widthkms, linenlam]) < 3 and np.count_nonzero([iline, widthkms, linenlam]) > 0:
             raise ValueError("To do molecular line images, 'iline', 'widthkms' and 'linenlam' must all be given.")
@@ -59,7 +59,7 @@ def create_image(isink, iout, npix=800, wav=None, sizeau=1000, setthreads=4, vie
         else: # Do single wavelength image
             image.makeImage(npix=npix, incl=incl, phi=phi, wav=wav, sizeau=sizeau,
                             setthreads=setthreads, posang=position_angle, nostar=nostar, tracetau=tracetau,
-                            doppcatch=True, exe = '/lustre/astro/troels/radmc3d/bin/radmc3d')
+                            doppcatch=True, exe = '/lustre/astro/troels/radmc3d/bin/radmc3d_ifx')
             
         # Leave the folder
         os.chdir(org_path)
@@ -86,9 +86,6 @@ def single_wavelength_image(isink, iout, npix, wav, sizeau, setthreads, dpc=140,
         nostar (bool, default=True): If True the calculated images will not contain stellar emission
         tracetau (bool, default=False): If True returns the traced optical depth instead of emission
         overwrite (bool, default=False): Whether to overwrite the CASA project folder
-
-    Returns:
-        radmc3dPy.image.radmc3dImage class
     '''
     # Check if all the folders, that need to exist, do exist
     path = goto_folder(isink, iout)
@@ -99,22 +96,13 @@ def single_wavelength_image(isink, iout, npix, wav, sizeau, setthreads, dpc=140,
     # Construct the file name
     fname = "image-"+view_str+"-npix"+str(npix)+"-singlewav-"+str(sizeau)+"au-"+str(int(wav))+"mu"
 
-    # Next if it already existed, we'll check if we've already created the image before
-    if not os.path.exists(path+"/saved_images/"+fname+".out"):
+    if not os.path.exists(path+"/saved_fits/"+fname+".fits"):
         if verbose: print("An image of this configuration doesn't exist. Creating it...")
+        # Make the image
         create_image(isink, iout, npix=npix, wav=wav, sizeau=sizeau, setthreads=setthreads, nostar=nostar, 
                      inclination=inclination, rotangle=rotangle)
-        # We know that the image is saved 'image.out', but we want to move it and rename it
-        # Check if the folder "saved_images" exists
-        shutil.move(path+"/image.out", path+"/saved_images/"+fname+".out")
-
-        # Write to FITS file for easy retrieval
-        img = image.readImage(fname=path+"/saved_images/"+fname+".out")
-        img.writeFits(fname=path+"/saved_fits/"+fname+".fits", dpc=dpc, coord="04h04m43.08s 26d18m56.12s", casa=True, nu0=img.freq[0])
-
-    elif not os.path.exists(path+"/saved_fits/"+fname+".fits"):
-        # In case the .out file is created but we forgot to make the fits file (good if one needs to change dpc or coord)
-        img = image.readImage(fname=path+"/saved_images/"+fname+".out")
+        # Assume "image.out" is created and not overwritten in the time between creation and reading in...
+        img = image.readImage(os.path.join(path,"image.out"))
         img.writeFits(fname=path+"/saved_fits/"+fname+".fits", dpc=dpc, coord="04h04m43.08s 26d18m56.12s", casa=True, nu0=img.freq[0])
 
     else:
@@ -122,8 +110,7 @@ def single_wavelength_image(isink, iout, npix, wav, sizeau, setthreads, dpc=140,
         # At this point the main function should handle loading...
 
 def molecular_lines_image(isink, iout, npix, sizeau, setthreads, iline, widthkms, linenlam, imolspec=1, view=None, inclination=None, 
-                          rotangle=None, dpc=None, beam=None, nostar=True, casa=False, antennalist=None, totaltime=None,
-                          threshold="4mJy", niter=5000, overwrite=False, verbose=1):
+                          rotangle=None, dpc=None, nostar=True, verbose=1):
     '''
     This function calls the create image function for an image with multiple wavelengths around a given molecular line transition.
 
@@ -142,17 +129,9 @@ def molecular_lines_image(isink, iout, npix, sizeau, setthreads, iline, widthkms
         inclination (float, optional): The inclination of the viewed image
         rotangle (float, optional): The clockwise rotation around the z-axis of the system
         dpc (float, optional): Distance to source in pc
-        beam (tuple, optional): FWHM beam in arcseconds (beam_x, beam_y)
         nostar (bool, default=True): If True the calculated images will not contain stellar emission
         verbose (bool, default=1): Report task activity
-
-    Returns:
-        radmc3dPy.image.radmc3dImage class
     '''
-    # Error handling
-    if beam and casa:
-        raise ValueError("'beam' is not needed to run CASA, please either specify 'beam' to convolve with a Gaussian beam, or set 'casa' = True to run the CASA pipeline.")
-
     # Check if all the folders, that need to exist, do exist
     path = goto_folder(isink, iout)
     check_folders(path)
@@ -165,27 +144,14 @@ def molecular_lines_image(isink, iout, npix, sizeau, setthreads, iline, widthkms
     # Save fname for later use
     fname = "image-"+molecule_name.replace("+","plus")+"-"+view_str+"-npix"+str(npix)+"-"+str(sizeau)+"au-transition"+str(iline)+"-widthkms"+str(widthkms)+"-lines"+str(linenlam)
 
-    # Next if it already existed, we'll check if we've already created the image before
-    if not os.path.exists(path+"/saved_images/"+fname+".out"):
+    if not os.path.exists(path+"/saved_fits/"+fname+".fits"):
         if verbose: print("An image of this configuration doesn't exist. Creating it...")
+        # Make the image with create_image
         create_image(isink, iout, npix=npix, sizeau=sizeau, setthreads=setthreads, inclination=inclination, rotangle=rotangle,
                      imolspec=imolspec, iline=iline, widthkms=widthkms, linenlam=linenlam, nostar=nostar)
-        # We know that the image is saved 'image.out', but we want to move it and rename it
-        shutil.move(path+"/image.out", path+"/saved_images/"+fname+".out")
 
-        # Write to FITS file for easy retrieval
-        img = image.readImage(fname=path+"/saved_images/"+fname+".out")
-        if verbose: print("Writing image to fits file...")
-        if img.nfreq % 2 == 0:
-            nu0 = img.freq[img.nfreq//2-1]/2 + img.freq[img.nfreq//2]/2
-        else:
-            nu0 = img.freq[img.nfreq//2]
-        bandwidth = np.abs(img.freq[0] - img.freq[1]) * 1e-6 # Calculate the bandwidth (assumed the same between freqs)
-        img.writeFits(path+"/saved_fits/"+fname+".fits", dpc=dpc, coord="04h04m43.07s 26d18m56.4s", bandwidthmhz=bandwidth, casa=True, nu0=nu0)
-
-    elif not os.path.exists(path+"/saved_fits/"+fname+".fits"):
-        # In case the .out file is created but we forgot to make the fits file (good if one needs to change dpc or coord)
-        img = image.readImage(fname=path+"/saved_images/"+fname+".out")
+        # Read it in and convert to FITS, so we don't have to save all image.out files (loads faster, takes less space)
+        img = image.readImage(os.path.join(path,"image.out"))
         if verbose: print("Writing image to fits file...")
         if img.nfreq % 2 == 0:
             nu0 = img.freq[img.nfreq//2-1]/2 + img.freq[img.nfreq//2]/2
