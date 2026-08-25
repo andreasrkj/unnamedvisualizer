@@ -1,5 +1,5 @@
 # synthObserver
-<img src="synthObserver logo.svg" fill="#00d4f2">
+<img src="synthObserver logo.svg">
 
 **synthObserver** converts [RAMSES](https://ramses.cnrs.fr/) simulations into synthetic observations using [RADMC-3D](https://github.com/dullemond/radmc3d-2.0) and [CASA](https://casadocs.readthedocs.io/en/stable/index.html).
 
