@@ -41,7 +41,7 @@ class casaImageClass:
         self.header = cube.header
 
         # Load in the beam from the cube and calculate pixel and arcsec values
-        self.beam_px = (np.abs(cube.beam.major/cube.header["CDELT1"]), cube.beam.minor/cube.header["CDELT1"], cube.beam.pa)
+        self.beam_px = (np.abs(cube.beam.major.to_value(unit.deg)/cube.header["CDELT1"]), cube.beam.minor.to_value(unit.deg)/cube.header["CDELT1"], cube.beam.pa)
         self.beam_arcsec = (cube.beam.major.to_value(unit.arcsec), cube.beam.minor.to_value(unit.arcsec), cube.beam.pa)
 
         # Assign header keywords
@@ -81,7 +81,7 @@ class casaImageClass:
         # Create scale bar
         # We should normalize the distances to the edges
         plot_size = np.abs(ax.get_xlim()[1] - ax.get_xlim()[0])
-        bar_length = int(25 + 25 * (plot_size // 250))
+        bar_length = int(25 * (plot_size // 250))
         bar_length_normalized = bar_length / (np.abs(ax.get_xlim()[1] - ax.get_xlim()[0]))
 
         ax.hlines(0.07, 0.93-bar_length_normalized/2, 0.93+bar_length_normalized/2, color="black", linestyles="solid", linewidths=3, transform=ax.transAxes)
@@ -91,7 +91,7 @@ class casaImageClass:
 
         # Add beam
         aux_tr_box = AuxTransformBox(ax.transData)
-        aux_tr_box.add_artist(Ellipse((0,0), self.beam_px[0] * self.sizepix_x/unit.AU.to(unit.cm), self.beam_px[1] * self.sizepix_y/unit.AU.to(unit.cm), self.beam_px[2], color="black"))
+        aux_tr_box.add_artist(Ellipse((0,0), self.beam_px[0] * self.sizepix_x/unit.AU.to(unit.cm), self.beam_px[1] * self.sizepix_y/unit.AU.to(unit.cm), self.beam_px[2].to_value(unit.deg), color="black"))
         box = AnchoredOffsetbox(child=aux_tr_box, loc="lower left", frameon=True)
         ax.add_artist(box)
 
@@ -129,14 +129,14 @@ class casaImageClass:
         if mask:
             plot_img = np.ma.masked_less_equal(plot_img, 3*self.rms * 1e3) # Mask image
 
-        if vmin is None: vmin = plot_img.min()
-        if vmax is None: vmax = plot_img.max()
+        if vmin is None: vmin = np.nanmin(plot_img)
+        if vmax is None: vmax = np.nanmax(plot_img)
 
-        if vmin > plot_img.min():
+        if vmin > np.nanmin(plot_img):
             extend = "min"
-        elif vmax < plot_img.max():
+        elif vmax < np.nanmax(plot_img):
             extend="max"
-        elif (vmin > plot_img.min()) and (vmin < plot_img.max()):
+        elif (vmin > np.nanmin(plot_img)) and (vmin < np.nanmax(plot_img)):
             extend="both"
         else:
             extend="neither"
@@ -200,7 +200,7 @@ class casaImageClass:
 
         self.streamer_mask = streamer_mask 
 
-    def plot_moment(self, moment=0, mask=True, vmin=None, vmax=None, ax=None, xlim=None, ylim=None, save=False):
+    def plot_moment(self, moment=0, mask=25, vmin=None, vmax=None, ax=None, xlim=None, ylim=None, save=False):
         if ax is None: # Create a figure if not supplied
             fig, ax = plt.subplots(1,1, figsize=(8,10))
         else:
@@ -212,45 +212,47 @@ class casaImageClass:
         # Mask values
         if mask and moment in [1,2,9]:
             mmap8 = self.calc_moment(moment=8)
-            mmap = np.ma.masked_where(mmap8 <= 5*self.rms, mmap)
+            mmap = np.where(mmap8 > mask*self.rms, mmap, np.nan) # Mask out values below SNR threshold
 
         # Set plot labels and colorbar
         if moment == 0:
             cmap = "Spectral_r"
-            mmap *= 1e3 # Turn to mJy :)
-            cb_label = "[mJy/beam $\\times$ km/s]"
+            cb_label = "[K $\\times$ km/s]"
+            mmap = mmap.to_value(unit.K * unit.km/unit.s)
         elif moment == 1:
             cmap = "RdYlBu_r"
             cb_label = 'Velocity [km/s]'
+            mmap = mmap.to_value(unit.km/unit.s)
         elif moment == 2:
             cmap = "Spectral_r"
             cb_label = "Velocity Dispersion $\\sigma$ [km/s]"
-            mmap = np.sqrt(mmap)
+            mmap = np.sqrt(mmap).to_value(unit.km/unit.s)
         elif moment == 8:
             cmap = "Spectral_r"
-            mmap *= 1e3 # Turn to mJy
+            mmap = mmap.to_value(unit.mJy/unit.beam) # Turn to mJy
             cb_label = "Peak Intensity [mJy/beam]"
         elif moment == 9:
             cmap = "RdYlBu_r"
             cb_label = "Peak Velocity [km/s]"
+            mmap = mmap.to_value(unit.km/unit.s)
         
-        if vmin is None: vmin = mmap.min()
-        if vmax is None: vmax = mmap.max()
+        if vmin is None: vmin = np.nanmin(mmap)
+        if vmax is None: vmax = np.nanmax(mmap)
 
-        if (vmin > mmap.min()) and (vmin < mmap.max()):
+        if (vmin > np.nanmin(mmap)) and (vmin < np.nanmax(mmap)):
             extend="both"
-        elif vmin > mmap.min():
+        elif vmin > np.nanmin(mmap):
             extend = "min"
-        elif vmax < mmap.max():
+        elif vmax < np.nanmax(mmap):
             extend="max"
         else:
             extend = "neither"
-            # ADDITION: Let's make the min and max symmetric if km/s
-            if moment in [1,9]:
-                if np.abs(mmap.max()) > 0 and np.abs(mmap.max()) > np.abs(mmap.min()):
-                    vmin = -mmap.max(); vmax = mmap.max()
-                elif np.abs(mmap.max()) > 0 and np.abs(mmap.max()) < np.abs(mmap.min()):
-                    vmin = mmap.min(); vmax = np.abs(mmap.min())
+        #    # ADDITION: Let's make the min and max symmetric if km/s
+        #     if moment in [1,9]:
+        #         if np.abs(mmap.max()) > 0 and np.abs(mmap.max()) > np.abs(mmap.min()):
+        #             vmin = -mmap.max(); vmax = mmap.max()
+        #         elif np.abs(mmap.max()) > 0 and np.abs(mmap.max()) < np.abs(mmap.min()):
+        #             vmin = mmap.min(); vmax = np.abs(mmap.min())
 
         im = ax.imshow(mmap, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2), cmap=cmap, vmin=vmin, vmax=vmax, origin="lower")
         cbar = plt.colorbar(im, ax=ax, pad=0, orientation="horizontal", location="top", extend=extend)
@@ -260,8 +262,8 @@ class casaImageClass:
         # Add contour lines if velocity maps
         if moment in [1,2,9]:
             mmap8 = self.calc_moment(moment=8)
-            snr_map = mmap8 / self.rms
-            ax.contour(snr_map, levels=[10, 50, 100, 150], extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2), origin="lower", colors="black")
+            snr_map = (mmap8 / self.rms).to_value(unit.dimensionless_unscaled)
+            ax.contour(snr_map, levels=[50, 100], extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2), origin="lower", colors="black")
 
 
         # Create the FWHM primary beam circle
