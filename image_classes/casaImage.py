@@ -96,6 +96,7 @@ class casaImageClass:
         ax.add_artist(box)
 
     def plot_singlewav(self, log=False, ifreq=None, mask=False, vmin=None, vmax=None, ax=None, xlim=None, ylim=None, save=False):
+        '''Plot a single frequency channel of the image. If log=True, will plot log10 of the image. If mask=True, will mask out all pixels below 3xRMS.'''
         if not ax: # Create a figure if not supplied
             fig, ax = plt.subplots(1,1, figsize=(8,10))
         else:
@@ -157,7 +158,8 @@ class casaImageClass:
             print("Outputting image plot as .png")
             plt.savefig(self.path+"/saved_plots/SingleWav/simalma_"+save_name+".png", bbox_inches="tight")
 
-    def calc_moment(self, moment=0, int_lims=(-2,2)):        
+    def calc_moment(self, moment=0, int_lims=(-2,2)):      
+        '''Calculate moment maps of the image. Provide integration limits in km/s.'''  
         try: mmap = getattr(self, "moment"+str(moment)) # If we have already calculated it, no need to do it again
         except:
             if self.nfreq < 2:
@@ -201,6 +203,7 @@ class casaImageClass:
         self.streamer_mask = streamer_mask 
 
     def plot_moment(self, moment=0, mask=25, vmin=None, vmax=None, ax=None, xlim=None, ylim=None, save=False):
+        '''Plot a moment map of the image. If mask is set, will mask out all pixels below SNR threshold.'''
         if ax is None: # Create a figure if not supplied
             fig, ax = plt.subplots(1,1, figsize=(8,10))
         else:
@@ -285,73 +288,74 @@ class casaImageClass:
             print("Outputting image plot as .png")
             plt.savefig(self.path+"/saved_plots/MomentMaps/simalma_moment-"+str(moment)+"-map-"+self.fname.replace("image-","")+".png", bbox_inches="tight")
 
-    def plot_channel_map(self, mask=True, xlim=None, ylim=None, vmin=None, vmax=None, save=False): # TODO - Update to use SpectralCube
-        # Depending on the resolution we define the number of maps made
-        if self.nfreq <= 9: n = 3
-        elif self.nfreq <= 16: n = 4
-        elif self.nfreq <= 25: n = 5
-        elif self.nfreq <= 36: n = 6
-        elif self.nfreq <= 49: n = 7
-        else:
-            raise ValueError("linenlam exceeds the recommended number of maps.")
+    # CHANNEL MAPS CURRENTLY DEPRECATED, CONSTRUCT YOUR OWN USING plot_singlewav FUNCTION AND LOOPING OVER DESIRED ifreq VALUES.
+    # def plot_channel_map(self, mask=True, xlim=None, ylim=None, vmin=None, vmax=None, save=False): # TODO - Update to use SpectralCube
+    #     # Depending on the resolution we define the number of maps made
+    #     if self.nfreq <= 9: n = 3
+    #     elif self.nfreq <= 16: n = 4
+    #     elif self.nfreq <= 25: n = 5
+    #     elif self.nfreq <= 36: n = 6
+    #     elif self.nfreq <= 49: n = 7
+    #     else:
+    #         raise ValueError("linenlam exceeds the recommended number of maps.")
         
-        fig, ax = plt.subplots(n,n, figsize=(16,16))
-        ax = ax.flatten()
+    #     fig, ax = plt.subplots(n,n, figsize=(16,16))
+    #     ax = ax.flatten()
 
-        v_kms = cnst.c.value * (self.nu0 - self.freq) / self.nu0 / 1e3
-        max_Tb = 0
-        min_Tb = 0
+    #     v_kms = cnst.c.value * (self.nu0 - self.freq) / self.nu0 / 1e3
+    #     max_Tb = 0
+    #     min_Tb = 0
 
-        if mask:
-            plot_img = np.ma.masked_less_equal(self.image, 3*self.rms) * 1e3 # mJy/beam
-        else:
-            plot_img = self.image * 1e3 # mJy/beam
+    #     if mask:
+    #         plot_img = np.ma.masked_less_equal(self.image, 3*self.rms) * 1e3 # mJy/beam
+    #     else:
+    #         plot_img = self.image * 1e3 # mJy/beam
 
-        for i in range(len(ax)):
-            if i < self.nfreq:
-                # Calculate the brightness temperature of the image
-                Tb = 1.222e3 * plot_img[:,:,i] / ((self.freq[i]*1e-9)**2 * self.beam_arcsec[0] * self.beam_arcsec[1]) # https://science.nrao.edu/facilities/vla/proposing/TBconv
-                if Tb.max() > max_Tb:
-                    max_Tb = Tb.max()
-                if Tb.min() < min_Tb:
-                    min_Tb = Tb.min()
+    #     for i in range(len(ax)):
+    #         if i < self.nfreq:
+    #             # Calculate the brightness temperature of the image
+    #             Tb = 1.222e3 * plot_img[:,:,i] / ((self.freq[i]*1e-9)**2 * self.beam_arcsec[0] * self.beam_arcsec[1]) # https://science.nrao.edu/facilities/vla/proposing/TBconv
+    #             if Tb.max() > max_Tb:
+    #                 max_Tb = Tb.max()
+    #             if Tb.min() < min_Tb:
+    #                 min_Tb = Tb.min()
 
-                plot = ax[i].imshow(Tb, cmap="Spectral_r", origin="lower", vmin=vmin, vmax=vmax, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2))
+    #             plot = ax[i].imshow(Tb, cmap="Spectral_r", origin="lower", vmin=vmin, vmax=vmax, extent=(-self.sizeau/2,self.sizeau/2,-self.sizeau/2,self.sizeau/2))
 
-                if xlim is not None:
-                    ax[i].set_xlim(xlim[0], xlim[1])
-                if ylim is not None:
-                    ax[i].set_ylim(ylim[0], ylim[1])
+    #             if xlim is not None:
+    #                 ax[i].set_xlim(xlim[0], xlim[1])
+    #             if ylim is not None:
+    #                 ax[i].set_ylim(ylim[0], ylim[1])
 
-                plot_size = np.abs(ax[i].get_xlim()[1] - ax[i].get_xlim()[0])
-                ax[i].text(-475/500 * plot_size//2, 490/500 * plot_size//2 ,str(np.round(v_kms[i],2)) + " km/s", va="top", ha="left", color="black", size=18)
-                self._stylize_plot(ax[i], color="black", text_size=10)
-            else:
-                fig.delaxes(ax[i])
-        if vmin is None: vmin = min_Tb
-        if vmax is None: vmax = max_Tb
+    #             plot_size = np.abs(ax[i].get_xlim()[1] - ax[i].get_xlim()[0])
+    #             ax[i].text(-475/500 * plot_size//2, 490/500 * plot_size//2 ,str(np.round(v_kms[i],2)) + " km/s", va="top", ha="left", color="black", size=18)
+    #             self._stylize_plot(ax[i], color="black", text_size=10)
+    #         else:
+    #             fig.delaxes(ax[i])
+    #     if vmin is None: vmin = min_Tb
+    #     if vmax is None: vmax = max_Tb
 
-        if vmin > min_Tb and vmax < max_Tb:
-            cb_extend = "both"
-        elif vmin > min_Tb:
-            cb_extend = "min"
-        elif vmax < max_Tb:
-            cb_extend = "max"
-        else:
-            cb_extend = "neither"
+    #     if vmin > min_Tb and vmax < max_Tb:
+    #         cb_extend = "both"
+    #     elif vmin > min_Tb:
+    #         cb_extend = "min"
+    #     elif vmax < max_Tb:
+    #         cb_extend = "max"
+    #     else:
+    #         cb_extend = "neither"
         
 
-        plt.subplots_adjust(wspace=0.01, hspace=0.01, top=0.88)
-        # compute combined horizontal span of the top row and place colorbar centered above it
-        left = min(a.get_position().x0 for a in ax[:n])
-        right = max(a.get_position().x1 for a in ax[:n])
-        top = max(a.get_position().y1 for a in ax[:n]) + 0.01
-        cbar_ax = fig.add_axes([left, top, right - left, 0.015])
-        cbar = fig.colorbar(plot, cax=cbar_ax, orientation="horizontal", extend=cb_extend)
-        cbar.set_label("Brightness Temperature [K]", size=20)
-        cbar.ax.tick_params(labelsize=14)
-        cbar_ax.xaxis.set_label_position('top')
-        cbar_ax.xaxis.set_ticks_position('top')
+    #     plt.subplots_adjust(wspace=0.01, hspace=0.01, top=0.88)
+    #     # compute combined horizontal span of the top row and place colorbar centered above it
+    #     left = min(a.get_position().x0 for a in ax[:n])
+    #     right = max(a.get_position().x1 for a in ax[:n])
+    #     top = max(a.get_position().y1 for a in ax[:n]) + 0.01
+    #     cbar_ax = fig.add_axes([left, top, right - left, 0.015])
+    #     cbar = fig.colorbar(plot, cax=cbar_ax, orientation="horizontal", extend=cb_extend)
+    #     cbar.set_label("Brightness Temperature [K]", size=20)
+    #     cbar.ax.tick_params(labelsize=14)
+    #     cbar_ax.xaxis.set_label_position('top')
+    #     cbar_ax.xaxis.set_ticks_position('top')
 
-        fig.suptitle("Channel Map "+self.mol_name+" J="+str(self.transition[0])+"-"+str(self.transition[1])+" transition", size=30)
-        plt.savefig(self.path+"/saved_plots/ChannelMaps/simalma_channel-map-"+self.fname.replace("image-","")+".png", bbox_inches="tight", dpi=300)
+    #     fig.suptitle("Channel Map "+self.mol_name+" J="+str(self.transition[0])+"-"+str(self.transition[1])+" transition", size=30)
+    #     plt.savefig(self.path+"/saved_plots/ChannelMaps/simalma_channel-map-"+self.fname.replace("image-","")+".png", bbox_inches="tight", dpi=300)
