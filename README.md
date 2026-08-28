@@ -7,7 +7,7 @@
 - Set up and create necessary files for running RADMC-3D, as well as running the dust temperature calculation
 - Simple chemistry: Freeze out molecules and change their abundance at specific temperatures
 - Single wavelength (pseudo-dust continuum) images
-- Molecular line images (moment maps, channel maps, peak intensity/velocity maps)
+- Molecular line images (moment maps, peak intensity/velocity maps)
 - Create and plot SEDs along with the bolometric temperature
 - Create and plot bolometric temperature maps of the system by generating an SED for each pixel along the line of sight
 - Temperature (RADMC-3D), column density and velocities using [RaDvisPython](https://github.com/CGHolm/RaDvisPython)
@@ -19,4 +19,4 @@
 
 ### Known issues:
 - Central pixel is VERY bright on all scales, this is possibly due to a problem with the call to RADMC-3D. It causes a very high emission (roughly the size of the beam) in the center of the image, which causes oversubtraction due to the side lobes of the beam when running simALMA and thus mildly to very negative emission. This can cause problems for velocity maps.
-- More testing needed, but it is currently recommended to run RADMC-3D and simALMA separately (so first call with casa=False and high number of threads, then with casa=True and low number of threads), as the function seems to slow down with high number of threads. (?)Æ
+- More testing needed, but it is currently recommended to run RADMC-3D and simALMA separately (so first call with casa=False and high number of threads, then with casa=True and low number of threads), as the function seems to slow down with high number of threads. (?)
